@@ -9,6 +9,7 @@ from app.models.postgress_writer import (
     get_test_case_json_by_story_id,
     get_all_generated_story_ids
 )
+import pandas as pd
 
 load_dotenv()
 
@@ -22,16 +23,22 @@ MAX_MAIN_TEXT_CHARS = 5000
 with open("Backend/app/LLM/test_case_prompt.txt", "r", encoding="utf-8") as f:
     INSTRUCTIONS = f.read()
 
-# Connect to LanceDB
-db = lancedb.connect(LANCE_DB_PATH)
-table = db.open_table(TABLE_NAME)
-
-def generate_test_case_for_story(story_id, table_ref=table, llm_ref=Config.llm):
-    all_rows = table_ref.search().to_list()
-    row = next((r for r in all_rows if r["storyID"] == story_id), None)
-
-    if not row:
+def generate_test_case_for_story(story_id, llm_ref=Config.llm):
+    db = lancedb.connect(Config.LANCE_DB_PATH)
+    table = db.open_table(Config.TABLE_NAME_LANCE)
+    all_rows = table.to_pandas()
+    row_data = all_rows[all_rows['storyID'] == story_id]
+    
+    if row_data.empty:
         print(f"❌ Story ID '{story_id}' not found in LanceDB.")
+        return
+    
+    row = row_data.iloc[0].to_dict()
+    
+    # Check if story has a vector
+    vector_value = row.get("vector")
+    if vector_value is None or (hasattr(vector_value, '__len__') and len(vector_value) == 0):
+        print(f"❌ Story ID '{story_id}' is missing a vector and cannot be processed.")
         return
 
     story_description = row["storyDescription"]
@@ -46,7 +53,7 @@ def generate_test_case_for_story(story_id, table_ref=table, llm_ref=Config.llm):
 
     # Get similar docs using cosine similarity
     similar_docs = (
-        table_ref.search(vector)
+        table.search(vector)
         .metric("cosine")
         .limit(TOP_K + 5)
         .to_list()
@@ -123,19 +130,45 @@ def generate_test_case_for_story(story_id, table_ref=table, llm_ref=Config.llm):
 
 # === Run for all unprocessed
 def generate_test_cases_for_all_stories():
+    db = lancedb.connect(Config.LANCE_DB_PATH)
+    table = db.open_table(Config.TABLE_NAME_LANCE)
+
     generated_ids = set(get_all_generated_story_ids())
-    records = [row for row in table.search().to_list() if row["storyID"] not in generated_ids]
-
+    all_rows = table.to_pandas()
+    
+    print(f"📊 Total stories in LanceDB: {len(all_rows)}")
+    print(f"📊 Already generated stories: {len(generated_ids)}")
+    
+    # Check for missing vectors
+    missing_vector_count = 0
+    for index, row in all_rows.iterrows():
+        vector_value = row.get("vector")
+        if vector_value is None or (hasattr(vector_value, '__len__') and len(vector_value) == 0):
+            print(f"Story {row['storyID']} is missing a vector and will not be processed.")
+            missing_vector_count += 1
+    
+    print(f"📊 Stories missing vectors: {missing_vector_count}")
+    
+    # Get all story IDs and filter out already generated ones
+    all_story_ids = all_rows['storyID'].tolist()
+    records = [story_id for story_id in all_story_ids if story_id not in generated_ids]
+    
     print(f"🟡 Found {len(records)} entries to process.\n")
+    
+    if len(records) == 0:
+        print("✅ All stories with vectors have been processed!")
+        return
+        
+    for story_id in records:
+        generate_test_case_for_story(story_id)
 
-    for row in records:
-        generate_test_case_for_story(row["storyID"])
-
-def Chat_RAG(user_query, table_ref=table, top_k=3):
+def Chat_RAG(user_query, top_k=3):
+    db = lancedb.connect(Config.LANCE_DB_PATH)
+    table = db.open_table(Config.TABLE_NAME_LANCE)
     query_vector = Config.EMBEDDING_MODEL.encode(user_query).tolist()
 
     results = (
-        table_ref.search(query_vector)
+        table.search(query_vector)
         .metric("cosine")
         .limit(top_k)
         .to_list()

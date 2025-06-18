@@ -1,27 +1,66 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { api, TestCase, TestCaseResponse } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ChevronDown, ChevronUp, Triangle } from "lucide-react";
+import { ChevronDown, ChevronUp, Download, ArrowLeft, Info, CheckCircle2, AlertCircle, Brain, Triangle, Eye, FileText } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 
 export default function StoryTestCasesPage() {
   const params = useParams();
+  const router = useRouter();
   const storyId = typeof params?.storyId === 'string' ? params.storyId : Array.isArray(params?.storyId) ? params.storyId[0] : '';
   const [testCases, setTestCases] = useState<TestCase[]>([]);
   const [storyDescription, setStoryDescription] = useState<string | null>(null);
+  const [storyContent, setStoryContent] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [expanded, setExpanded] = useState<number | null>(null);
   const [currentTime, setCurrentTime] = useState<string>("");
+  const [selectedTestCase, setSelectedTestCase] = useState<TestCase | null>(null);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [showStoryContent, setShowStoryContent] = useState(false);
+  const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
 
   useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        const response = await api.getTestCases(storyId);
+        setTestCases(response.testcases);
+        setStoryDescription(response.storyDescription);
+        // Fetch story content
+        const storyResponse = await fetch(`http://127.0.0.1:5000/api/stories/${storyId}`);
+        if (storyResponse.ok) {
+          const storyData = await storyResponse.json();
+          console.log('Story data response:', storyData); // Debug log
+          setStoryContent(storyData.document_content);
+        } else {
+          console.error('Failed to fetch story:', storyResponse.status);
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to fetch test cases');
+      } finally {
+        setLoading(false);
+      }
+    };
+
     if (storyId) {
-      fetchTestCases();
+      fetchData();
     }
-    // eslint-disable-next-line
   }, [storyId]);
 
   useEffect(() => {
@@ -33,48 +72,61 @@ export default function StoryTestCasesPage() {
     return () => clearInterval(interval);
   }, []);
 
-  const fetchTestCases = async () => {
-    setLoading(true);
-    setError(null);
+  const handleViewDetails = (testCase: TestCase) => {
+    setSelectedTestCase(testCase);
+    setIsDialogOpen(true);
+  };
+
+  const handleDownload = async () => {
     try {
-      const response: TestCaseResponse = await api.getTestCases(storyId);
-      setTestCases(response.testcases);
-      setStoryDescription(response.storyDescription || null);
-    } catch (err) {
-      setError("Failed to fetch test cases. Please try again.");
-    } finally {
-      setLoading(false);
+      const response = await fetch(`http://127.0.0.1:5000/api/stories/testcases/download/${storyId}`);
+      if (!response.ok) throw new Error('Download failed');
+      
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `test_cases_${storyId}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error('Download error:', error);
     }
   };
 
-  const handleExpand = (idx: number) => {
-    setExpanded(expanded === idx ? null : idx);
+  const toggleCardExpand = (e: React.MouseEvent, cardId: string) => {
+    e.stopPropagation();
+    setExpandedCards(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(cardId)) {
+        newSet.delete(cardId);
+      } else {
+        newSet.add(cardId);
+      }
+      return newSet;
+    });
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 pt-32 px-4 flex flex-col font-sans">
-      {/* Fixed Header */}
+    <div className="min-h-screen bg-gray-50">
       <header className="fixed top-0 left-0 w-full z-50 bg-white shadow-sm border-b border-gray-300 px-4 md:px-8 py-4">
         <div className="flex justify-between items-center">
-          {/* Logo in top left */}
           <div className="flex-shrink-0">
             <img src="/Logo-New.svg" alt="Innova Solutions" className="h-12 w-auto" />
           </div>
-          {/* Main heading */}
           <div className="text-center">
             <h1 className="text-3xl font-bold text-blue-800">Test Case Generator</h1>
             <p className="text-sm text-blue-600 font-semibold mt-1">Powered by Gen AI</p>
           </div>
-          {/* Right section with time, date, bell, and team */}
           <div className="flex-shrink-0 flex items-center space-x-4">
-            {/* Time and Date */}
             <div className="text-right">
               <div className="text-lg font-bold text-slate-800">
                 {currentTime || 'Loading...'}
               </div>
               <div className="text-sm text-slate-600">{new Date().toLocaleDateString()}</div>
             </div>
-            {/* Bell notification icon */}
             <div className="relative">
               <div className="w-3 h-3 bg-red-400 rounded-full absolute -top-1 -right-1"></div>
               <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center">
@@ -87,7 +139,6 @@ export default function StoryTestCasesPage() {
                 </svg>
               </div>
             </div>
-            {/* Team Delta */}
             <div className="bg-blue-500 text-white px-4 py-2 rounded-full flex items-center space-x-2">
               <div className="w-6 h-6 bg-white/20 rounded-full flex items-center justify-center">
                 <Triangle className="h-3 w-3 fill-white" />
@@ -100,20 +151,67 @@ export default function StoryTestCasesPage() {
           </div>
         </div>
       </header>
-      <div className="max-w-4xl mx-auto w-full">
-        <Card className="shadow-lg border border-gray-200 rounded-xl overflow-hidden mb-8">
-          <CardHeader className="bg-blue-50 border-b border-gray-200">
-            <CardTitle className="text-2xl font-bold text-blue-800">
-              Test Cases for {storyId}
-            </CardTitle>
-            {storyDescription && <div className="text-gray-600 mt-2">{storyDescription}</div>}
+
+      <div className="max-w-[95%] mx-auto py-8 pt-32">
+        <Card className="shadow-lg border border-gray-200 rounded-xl overflow-hidden">
+          <CardHeader className="bg-gradient-to-r from-blue-50 to-white border-b border-gray-200">
+            <div className="flex flex-col gap-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <Button
+                    variant="outline"
+                    onClick={() => router.back()}
+                    className="flex items-center gap-2 border-gray-300 hover:bg-white hover:border-blue-300 transition-colors"
+                  >
+                    <ArrowLeft className="h-4 w-4" />
+                    Back to Stories
+                  </Button>
+                  <div className="h-6 w-px bg-gray-300"></div>
+                  <div className="flex items-center gap-2">
+                    <div className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium flex items-center gap-1">
+                      <CheckCircle2 className="h-4 w-4" />
+                      {testCases.length} Test Cases
+                    </div>
+                    <div className="px-3 py-1 bg-purple-100 text-purple-800 rounded-full text-sm font-medium flex items-center gap-1">
+                      <Brain className="h-4 w-4" />
+                      AI Generated
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => setShowStoryContent(true)}
+                    className="flex items-center gap-2 border-gray-300 hover:bg-white hover:border-blue-300 transition-colors"
+                  >
+                    <FileText className="h-4 w-4" />
+                    View Story Content
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={handleDownload}
+                    className="flex items-center gap-2 border-gray-300 hover:bg-white hover:border-blue-300 transition-colors"
+                  >
+                    <Download className="h-4 w-4" />
+                    Download Test Cases
+                  </Button>
+                </div>
+              </div>
+              
+              <div className="mt-2">
+                <CardTitle className="text-xl font-semibold text-blue-800 mb-3">
+                  Test Cases for Story {storyId}
+                </CardTitle>
+                {storyDescription && (
+                  <p className="text-gray-700 text-sm leading-relaxed">
+                    {storyDescription}
+                  </p>
+                )}
+              </div>
+            </div>
           </CardHeader>
-          {/* AI-generated note */}
-          <div className="flex items-center gap-2 bg-yellow-50 border-l-4 border-yellow-400 text-yellow-800 px-4 py-2 mb-4 rounded">
-            <svg className="w-5 h-5 text-yellow-500" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M12 20a8 8 0 100-16 8 8 0 000 16z" /></svg>
-            <span className="font-medium">These test cases are generated by AI.</span>
-          </div>
-          <CardContent className="bg-white">
+
+          <CardContent className="p-0 bg-white">
             {loading ? (
               <div className="p-8 text-center text-blue-600 font-semibold">Loading...</div>
             ) : error ? (
@@ -121,46 +219,174 @@ export default function StoryTestCasesPage() {
             ) : testCases.length === 0 ? (
               <div className="p-8 text-center text-gray-600">No test cases found for this story.</div>
             ) : (
-              <ul className="space-y-4">
+              <div className="grid grid-cols-2 gap-6 p-6">
                 {testCases.map((tc, idx) => (
-                  <li key={tc.test_case_id} className="border rounded-lg p-4 bg-gray-50">
-                    <div className="flex items-center justify-between cursor-pointer" onClick={() => handleExpand(idx)}>
-                      <div>
-                        <div className="font-semibold text-blue-800">{tc.title}</div>
-                        <div className="text-gray-600 text-sm">Test Case ID: <span className="font-mono">{tc.test_case_id}</span></div>
-                        <div className="text-gray-600 text-sm">Priority: {tc.priority}</div>
+                  <Card 
+                    key={tc.test_case_id || tc.id || idx} 
+                    className="border rounded-lg overflow-hidden hover:shadow-md transition-shadow cursor-pointer"
+                    onClick={() => handleViewDetails(tc)}
+                  >
+                    <div className="p-4 bg-gray-50 border-b">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center text-blue-800 font-semibold">
+                            {idx + 1}
+                          </div>
+                          <div>
+                            <div className="font-semibold text-blue-800">{tc.title}</div>
+                            <div className="text-gray-600 text-sm">
+                              ID: <span className="font-mono">{tc.test_case_id || tc.id || "N/A"}</span>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className={`px-2 py-1 rounded text-xs font-medium ${
+                            tc.priority === 'high' ? 'bg-red-100 text-red-800' :
+                            tc.priority === 'medium' ? 'bg-yellow-100 text-yellow-800' :
+                            'bg-green-100 text-green-800'
+                          }`}>
+                            {tc.priority || 'low'} priority
+                          </span>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleViewDetails(tc);
+                            }}
+                            className="text-blue-600 hover:text-blue-800 hover:bg-blue-50"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </div>
-                      <Button variant="ghost" size="icon">
-                        {expanded === idx ? <ChevronUp /> : <ChevronDown />}
-                      </Button>
                     </div>
-                    {expanded === idx && (
-                      <div className="mt-4 space-y-2">
-                        <div>
-                          <span className="font-medium text-gray-700">Description:</span>
-                          <span className="ml-2 text-gray-700">{tc.description}</span>
-                        </div>
-                        <div>
-                          <span className="font-medium text-gray-700">Steps:</span>
-                          <ol className="list-decimal ml-6 text-gray-700">
-                            {tc.steps.map((step, i) => (
-                              <li key={i}>{step}</li>
-                            ))}
-                          </ol>
-                        </div>
-                        <div>
-                          <span className="font-medium text-gray-700">Expected Result:</span>
-                          <span className="ml-2 text-gray-700">{tc.expected_result}</span>
-                        </div>
-                      </div>
-                    )}
-                  </li>
+                  </Card>
                 ))}
-              </ul>
+              </div>
             )}
           </CardContent>
         </Card>
       </div>
+
+      {/* Story Content Dialog */}
+      <Dialog open={showStoryContent} onOpenChange={setShowStoryContent}>
+        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-semibold text-blue-800">
+              Story Content
+            </DialogTitle>
+            <DialogDescription className="text-sm text-gray-600">
+              ID: {storyId}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-6">
+            <div>
+              <h3 className="text-sm font-semibold text-gray-700 mb-2">Story Description</h3>
+              <div className="bg-gray-50 rounded-lg p-4">
+                <p className="text-gray-700">{storyDescription}</p>
+              </div>
+            </div>
+            
+            {storyContent && (
+              <div>
+                <h3 className="text-sm font-semibold text-gray-700 mb-2">Story Content</h3>
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <p className="text-gray-700 whitespace-pre-wrap">{storyContent}</p>
+                </div>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Test Case Details Dialog */}
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-semibold text-blue-800">
+              {selectedTestCase?.title}
+            </DialogTitle>
+            <DialogDescription className="text-sm text-gray-600">
+              ID: {selectedTestCase?.test_case_id || selectedTestCase?.id || "N/A"}
+            </DialogDescription>
+          </DialogHeader>
+          
+          {selectedTestCase && (
+            <div className="space-y-6">
+              <div className="grid grid-cols-2 gap-6">
+                <div className="space-y-4">
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-700 mb-2">Test Steps</h3>
+                    <div className="space-y-2">
+                      {selectedTestCase.steps?.map((step, stepIdx) => (
+                        <div key={stepIdx} className="flex gap-3 p-3 bg-gray-50 rounded-lg">
+                          <div className="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center text-blue-800 font-semibold flex-shrink-0">
+                            {stepIdx + 1}
+                          </div>
+                          <div className="text-sm text-gray-700">{step}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="space-y-4">
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-700 mb-2">Expected Results</h3>
+                    <div className="space-y-2">
+                      {selectedTestCase?.expected_results ? (
+                        // Multiple expected results
+                        selectedTestCase.expected_results.map((result, resultIdx) => (
+                          <div key={resultIdx} className="flex gap-3 p-3 bg-gray-50 rounded-lg">
+                            <div className="w-6 h-6 bg-green-100 rounded-full flex items-center justify-center text-green-800 font-semibold flex-shrink-0">
+                              {resultIdx + 1}
+                            </div>
+                            <div className="text-sm text-gray-700">{result}</div>
+                          </div>
+                        ))
+                      ) : selectedTestCase?.expected_result ? (
+                        // Single expected result
+                        <div className="flex gap-3 p-3 bg-gray-50 rounded-lg">
+                          <div className="w-6 h-6 bg-green-100 rounded-full flex items-center justify-center text-green-800 font-semibold flex-shrink-0">
+                            1
+                          </div>
+                          <div className="text-sm text-gray-700">{selectedTestCase.expected_result}</div>
+                        </div>
+                      ) : (
+                        <div className="text-sm text-gray-500 italic">No expected results defined</div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-4 border-t">
+                <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-gray-700">Priority:</span>
+                    <span className={`px-2 py-1 rounded text-xs font-medium ${
+                      selectedTestCase.priority === 'high' ? 'bg-red-100 text-red-800' :
+                      selectedTestCase.priority === 'medium' ? 'bg-yellow-100 text-yellow-800' :
+                      'bg-green-100 text-green-800'
+                    }`}>
+                      {selectedTestCase.priority || 'low'}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-gray-700">Generated by:</span>
+                    <span className="px-2 py-1 rounded text-xs font-medium bg-purple-100 text-purple-800 flex items-center gap-1">
+                      <Brain className="h-3 w-3" />
+                      AI
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 } 

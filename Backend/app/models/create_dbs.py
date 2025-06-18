@@ -20,7 +20,8 @@ schema = pa.schema([
     ("test_case_content", pa.string()),
     ("filename", pa.string()),
     ("original_path", pa.string()),
-    ("doc_content_text", pa.string())
+    ("doc_content_text", pa.string()),
+    ("embedding_timestamp", pa.timestamp("us"))
 ])
 
 def create_LanceDB():
@@ -95,8 +96,6 @@ def create_postgres_db():
 if __name__ == "__main__":
     print("Creating LanceDB table...")
     create_LanceDB()
-    print("\nCreating PostgreSQL database and table...")
-    create_postgres_db()
 
 
 

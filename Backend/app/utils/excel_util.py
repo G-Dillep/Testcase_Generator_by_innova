@@ -4,7 +4,7 @@ from datetime import datetime
 
 def generate_excel(test_cases_data):
     """
-    Generate Excel file from test case data
+    Generate Excel file from test case data with improved formatting
     """
     try:
         # Create a BytesIO object to store the Excel file
@@ -36,6 +36,13 @@ def generate_excel(test_cases_data):
                 else:
                     steps_text = str(steps)
                 
+                # Extract expected results
+                expected_results = tc.get('expected_result', [])
+                if isinstance(expected_results, list):
+                    expected_text = '\n'.join([f"• {result}" for result in expected_results])
+                else:
+                    expected_text = tc.get('expected_result', '')
+                
                 # Create row with all fields
                 row = {
                     'Story ID': story_id,
@@ -43,8 +50,9 @@ def generate_excel(test_cases_data):
                     'Test Case ID': tc.get('id', ''),
                     'Title': tc.get('title', ''),
                     'Steps': steps_text,
-                    'Expected Result': tc.get('expected_result', ''),
-                    'Priority': tc.get('priority', '')
+                    'Expected Results': expected_text,
+                    'Priority': tc.get('priority', ''),
+                    'Status': tc.get('status', 'New')
                 }
                 rows.append(row)
         
@@ -64,7 +72,9 @@ def generate_excel(test_cases_data):
                 'bold': True,
                 'text_wrap': True,
                 'valign': 'top',
-                'bg_color': '#D9E1F2',
+                'align': 'center',
+                'bg_color': '#4472C4',
+                'font_color': 'white',
                 'border': 1
             })
             
@@ -75,20 +85,63 @@ def generate_excel(test_cases_data):
                 'border': 1
             })
             
+            # Add steps and expected results format
+            steps_format = workbook.add_format({
+                'text_wrap': True,
+                'valign': 'top',
+                'border': 1,
+                'align': 'left'
+            })
+            
+            # Add expected results format with bullet points
+            expected_format = workbook.add_format({
+                'text_wrap': True,
+                'valign': 'top',
+                'border': 1,
+                'align': 'left',
+                'indent': 1
+            })
+            
             # Apply formats
             for col_num, value in enumerate(df.columns.values):
                 worksheet.write(0, col_num, value, header_format)
-                worksheet.set_column(col_num, col_num, 30, cell_format)
+                
+                # Set column widths
+                if value in ['Story ID', 'Test Case ID', 'Priority', 'Status']:
+                    worksheet.set_column(col_num, col_num, 15, cell_format)
+                elif value in ['Title']:
+                    worksheet.set_column(col_num, col_num, 30, cell_format)
+                elif value in ['Steps']:
+                    worksheet.set_column(col_num, col_num, 50, steps_format)
+                elif value in ['Expected Results']:
+                    worksheet.set_column(col_num, col_num, 50, expected_format)
+                else:
+                    worksheet.set_column(col_num, col_num, 40, cell_format)
             
-            # Auto-adjust column widths
-            for i, col in enumerate(df.columns):
-                max_length = max(
-                    df[col].astype(str).apply(len).max(),
-                    len(col)
-                )
-                # Limit width to 50 characters
-                max_length = min(max_length, 50)
-                worksheet.set_column(i, i, max_length + 2)
+            # Merge cells for story information
+            if len(df) > 0:
+                worksheet.merge_range(1, 0, len(df), 0, story_id, cell_format)  # Story ID
+                worksheet.merge_range(1, 1, len(df), 1, story_description, cell_format)  # Story Description
+            
+            # Add status dropdown validation
+            status_col = df.columns.get_loc('Status')
+            worksheet.data_validation(1, status_col, len(df), status_col, {
+                'validate': 'list',
+                'source': ['New', 'In Progress', 'Completed'],
+                'input_message': 'Select status',
+                'error_message': 'Please select a valid status',
+                'show_dropdown': True
+            })
+            
+            # Add alternating row colors
+            for row in range(1, len(df) + 1):
+                if row % 2 == 0:
+                    worksheet.set_row(row, None, workbook.add_format({
+                        'bg_color': '#F2F2F2',
+                        'text_wrap': True,
+                        'valign': 'top',
+                        'border': 1
+                    }))
         
         # Reset buffer position
         output.seek(0)
@@ -96,4 +149,4 @@ def generate_excel(test_cases_data):
         
     except Exception as e:
         print(f"Error generating Excel: {str(e)}")
-        raise 
+        raise

@@ -74,7 +74,21 @@ Note: These are mock test cases generated for demonstration purposes. In a produ
 
 export async function POST(request: Request) {
   try {
-    const { message, context } = await request.json()
+    const { message, context, model } = await request.json()
+
+    if (model === 'rag') {
+      // Call Flask backend RAG endpoint
+      const flaskRes = await fetch('http://127.0.0.1:5000/api/stories/rag-chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: message })
+      });
+      const ragData = await flaskRes.json();
+      if (!flaskRes.ok) {
+        return Response.json({ error: ragData.error || 'RAG backend error' }, { status: 500 });
+      }
+      return Response.json({ testCases: ragData.testCases });
+    }
 
     // Check if we have the Google API key
     const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY

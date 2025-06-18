@@ -21,58 +21,66 @@ class DatabaseService:
         }
         self.TABLE_NAME_LANCE = Config.TABLE_NAME_LANCE
    
-    def get_recent_stories(self, page: int = 1, per_page: int = 10) -> Dict[str, Any]:
+    def get_recent_stories(self, page: int = 1, per_page: int = 10, from_date: str = None, to_date: str = None) -> Dict[str, Any]:
         """
         Get paginated stories with test case information from both PostgreSQL and LanceDB
-        
-        Args:
-            page: Page number (starts from 1)
-            per_page: Number of items per page
-            
-        Returns:
-            Dictionary containing:
-            - stories: List of stories for the current page
-            - total: Total number of stories
-            - total_pages: Total number of pages
-            - current_page: Current page number
-            - per_page: Number of items per page
+        Optionally filter by created_on date range.
         """
         try:
             # Get stories from LanceDB
             stories_table = self.lance_db.open_table(self.TABLE_NAME_LANCE)
             lance_stories = stories_table.to_pandas()
-            
+
+            # Add created_on from PostgreSQL for filtering
+            if from_date or to_date:
+                # Get all created_on values from PostgreSQL for all story IDs
+                story_ids = lance_stories['storyID'].tolist()
+                created_on_map = {}
+                with psycopg2.connect(**self.postgres_config) as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("""
+                            SELECT story_id, created_on FROM test_cases WHERE story_id = ANY(%s)
+                        """, (story_ids,))
+                        for row in cur.fetchall():
+                            created_on_map[row[0]] = row[1]
+                lance_stories['created_on'] = lance_stories['storyID'].map(created_on_map)
+                if from_date:
+                    lance_stories = lance_stories[lance_stories['created_on'] >= from_date]
+                if to_date:
+                    lance_stories = lance_stories[lance_stories['created_on'] <= to_date]
+
             # Calculate pagination
             total_stories = len(lance_stories)
             total_pages = (total_stories + per_page - 1) // per_page
             start_idx = (page - 1) * per_page
             end_idx = start_idx + per_page
-            
+
             # Get paginated stories
             paginated_stories = lance_stories.iloc[start_idx:end_idx]
-            
+
             stories = []
             for _, lance_story in paginated_stories.iterrows():
                 story_id = lance_story['storyID']
-                
-                # Get test case count from PostgreSQL
+                # Get the latest test case row for this story_id
                 with psycopg2.connect(**self.postgres_config) as conn:
                     with conn.cursor() as cur:
                         cur.execute("""
                             SELECT total_test_cases, created_on
                             FROM test_cases
                             WHERE story_id = %s
+                            ORDER BY created_on DESC NULLS LAST
+                            LIMIT 1
                         """, (story_id,))
                         pg_result = cur.fetchone()
-                
                 stories.append({
                     'id': story_id,
                     'description': lance_story['storyDescription'],
-                    'num_test_cases': pg_result[0] if pg_result else 0,
+                    'document_content': lance_story['doc_content_text'] if 'doc_content_text' in lance_story else None,
+                    'test_case_count': pg_result[0] if pg_result else 0,
                     'download_link': f'/api/stories/download/{story_id}',
-                    'created_on': pg_result[1].isoformat() if pg_result and pg_result[1] else None
+                    'test_case_created_time': pg_result[1].isoformat() if pg_result and pg_result[1] else None
                 })
-            
+
             return {
                 'stories': stories,
                 'total': total_stories,
@@ -102,22 +110,35 @@ class DatabaseService:
                 print(f"Story not found in LanceDB: {story_id}")
                 return None
             
-            # Get test case information from PostgreSQL
+            # Get the latest test case row for this story_id
             with psycopg2.connect(**self.postgres_config) as conn:
                 with conn.cursor() as cur:
                     cur.execute("""
                         SELECT total_test_cases, created_on
                         FROM test_cases
                         WHERE story_id = %s
+                        ORDER BY created_on DESC NULLS LAST
+                        LIMIT 1
                     """, (story_id,))
                     pg_result = cur.fetchone()
-            
+            # Get embedding_timestamp from LanceDB
+            embedding_timestamp = None
+            if 'embedding_timestamp' in lance_story.columns:
+                ts = lance_story['embedding_timestamp'].iloc[0]
+                if ts:
+                    if hasattr(ts, 'isoformat'):
+                        embedding_timestamp = ts.isoformat()
+                    else:
+                        from dateutil import parser
+                        embedding_timestamp = parser.parse(ts).isoformat()
             return {
                 'id': story_id,
                 'description': lance_story['storyDescription'].iloc[0],
-                'num_test_cases': pg_result[0] if pg_result else 0,
+                'document_content': lance_story['doc_content_text'].iloc[0] if 'doc_content_text' in lance_story.columns else None,
+                'test_case_count': pg_result[0] if pg_result else 0,
                 'download_link': f'/api/stories/download/{story_id}',
-                'created_on': pg_result[1].isoformat() if pg_result and pg_result[1] else None
+                'test_case_created_time': pg_result[1].isoformat() if pg_result and pg_result[1] else None,
+                'embedding_timestamp': embedding_timestamp
             }
         except Exception as e:
             print(f"Error getting story {story_id}: {str(e)}")
@@ -136,34 +157,32 @@ class DatabaseService:
             if not query or not query.strip():
                 return {'stories': [], 'error': 'Query cannot be empty'}
 
-            # Get stories from LanceDB
+            # Get stories table from LanceDB
             stories_table = self.lance_db.open_table(self.TABLE_NAME_LANCE)
-            stories_df = stories_table.to_pandas()
-            
-            # Convert everything to lowercase for case-insensitive search
-            query = query.lower()
-            stories_df['description_lower'] = stories_df['storyDescription'].str.lower()
-            
-            # Find stories containing the query
-            matching_stories = stories_df[stories_df['description_lower'].str.contains(query, na=False)]
-            
-            # Calculate a simple similarity score based on query length
-            matching_stories['similarity_score'] = matching_stories['description_lower'].apply(
-                lambda x: min(1.0, len(query) / len(x))
+
+            # Encode the query using the embedding model
+            query_vector = Config.EMBEDDING_MODEL.encode(query).tolist()
+
+            # Use LanceDB vector search
+            results = (
+                stories_table.search(query_vector)
+                .metric("cosine")
+                .limit(limit)
+                .to_list()
             )
-            
-            # Sort by similarity score and get top results
-            results = matching_stories.nlargest(limit, 'similarity_score')
-            
-            # Format results
+
+            print(f"[DEBUG] Vector search returned {len(results)} results for query: '{query}'")
+            for result in results:
+                print(f"[DEBUG] ID: {result['storyID']}, Score: {result.get('_distance', None)}")
+
             stories = []
-            for _, row in results.iterrows():
-                stories.append({
-                    'id': row['storyID'],
-                    'description': row['storyDescription'],
-                    'similarity_score': float(row['similarity_score'])
-                })
-            
+            for result in results:
+                story_id = result['storyID']
+                story_data = self.get_story(story_id)
+                if story_data:
+                    story_data['similarity_score'] = result.get('_distance', None)
+                    stories.append(story_data)
+
             return {'stories': stories}
         except Exception as e:
             print(f"Error searching stories: {str(e)}")
