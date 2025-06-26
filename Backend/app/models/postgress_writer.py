@@ -49,7 +49,7 @@ def get_all_generated_story_ids():
         if conn:
             conn.close()
 
-def insert_test_case(story_id, story_description, test_case_json):
+def insert_test_case(story_id, story_description, test_case_json, project_id=None, source='backend', inputs=None):
     """Insert or update generated test case JSON into PostgreSQL."""
     try:
         conn = Config.get_postgres_connection()
@@ -64,30 +64,39 @@ def insert_test_case(story_id, story_description, test_case_json):
 
             query = """
                 INSERT INTO test_cases (
+                    project_id,
                     run_id,
                     story_id,
                     story_description,
                     created_on,
                     test_case_json,
                     total_test_cases,
-                    test_case_generated
-                ) VALUES (%s, %s, %s, %s, %s, %s, TRUE)
+                    test_case_generated,
+                    source,
+                    inputs
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, TRUE, %s, %s)
                 ON CONFLICT (run_id)
                 DO UPDATE SET
+                    project_id = EXCLUDED.project_id,
                     story_description = EXCLUDED.story_description,
                     created_on = EXCLUDED.created_on,
                     test_case_json = EXCLUDED.test_case_json,
                     total_test_cases = EXCLUDED.total_test_cases,
-                    test_case_generated = TRUE
+                    test_case_generated = TRUE,
+                    source = EXCLUDED.source,
+                    inputs = EXCLUDED.inputs
             """
 
             cur.execute(query, (
+                project_id,
                 run_id,
                 story_id,
                 story_description,
                 created_on,
                 json.dumps(test_case_json),
-                total_test_cases
+                total_test_cases,
+                source,
+                json.dumps(inputs) if inputs else None
             ))
             conn.commit()
     except Exception as e:

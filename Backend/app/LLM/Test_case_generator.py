@@ -10,6 +10,8 @@ from app.models.postgress_writer import (
     get_all_generated_story_ids
 )
 import pandas as pd
+from .impact_analyzer import analyze_test_case_impacts
+import asyncio
 
 load_dotenv()
 
@@ -23,7 +25,16 @@ MAX_MAIN_TEXT_CHARS = 5000
 with open("Backend/app/LLM/test_case_prompt.txt", "r", encoding="utf-8") as f:
     INSTRUCTIONS = f.read()
 
-def generate_test_case_for_story(story_id, llm_ref=Config.llm):
+def generate_test_case_for_story(story_id, llm_ref=None):
+    """Synchronous wrapper for async function"""
+    if llm_ref is None:
+        llm_ref = Config.llm
+    return asyncio.run(_generate_test_case_for_story(story_id, llm_ref))
+
+async def _generate_test_case_for_story(story_id, llm_ref=None):
+    """Async implementation of test case generation"""
+    if llm_ref is None:
+        llm_ref = Config.llm
     db = lancedb.connect(Config.LANCE_DB_PATH)
     table = db.open_table(Config.TABLE_NAME_LANCE)
     all_rows = table.to_pandas()
@@ -74,6 +85,14 @@ def generate_test_case_for_story(story_id, llm_ref=Config.llm):
 
     context_text = "\n\n".join(context_parts)
 
+    # Store inputs for tracking
+    inputs = {
+        "story_description": story_description,
+        "main_text": main_text,
+        "similar_stories": [doc["storyID"] for doc in similar_docs[:TOP_K] if doc["storyID"] != story_id],
+        "context_used": bool(context_text)
+    }
+
     # Enhanced prompt to ensure JSON output
     full_prompt = (
         f"{INSTRUCTIONS.strip()}\n\n"
@@ -121,15 +140,26 @@ def generate_test_case_for_story(story_id, llm_ref=Config.llm):
         insert_test_case(
             story_id=story_id,
             story_description=story_description,
-            test_case_json=testcases
+            test_case_json=testcases,
+            project_id=row.get("project_id", ""),
+            source='llm',
+            inputs=inputs
         )
         print(f"✅ Inserted test cases for {story_id} into Postgres.\n")
+
+        # After successful test case generation, analyze impacts
+        await analyze_test_case_impacts(story_id, row.get("project_id", ""))
 
     except Exception as e:
         print(f"❌ LLM error for {story_id}: {e}")
 
 # === Run for all unprocessed
 def generate_test_cases_for_all_stories():
+    """Synchronous wrapper for async function"""
+    return asyncio.run(_generate_test_cases_for_all_stories())
+
+async def _generate_test_cases_for_all_stories():
+    """Async implementation of batch test case generation"""
     db = lancedb.connect(Config.LANCE_DB_PATH)
     table = db.open_table(Config.TABLE_NAME_LANCE)
 
@@ -160,7 +190,7 @@ def generate_test_cases_for_all_stories():
         return
         
     for story_id in records:
-        generate_test_case_for_story(story_id)
+        await _generate_test_case_for_story(story_id)
 
 def Chat_RAG(user_query, top_k=3):
     db = lancedb.connect(Config.LANCE_DB_PATH)

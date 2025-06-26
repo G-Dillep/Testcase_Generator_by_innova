@@ -6,9 +6,9 @@ from app.models.create_dbs import create_LanceDB
 import lancedb
 from datetime import datetime
 
-UPLOAD_FOLDER = os.getenv("UPLOAD_FOLDER")
-SUCCESS_FOLDER = os.getenv("SUCCESS_FOLDER")
-FAILURE_FOLDER = os.getenv("FAILURE_FOLDER")
+UPLOAD_FOLDER = os.getenv("UPLOAD_FOLDER", "./data/uploaded_docs")
+SUCCESS_FOLDER = os.getenv("SUCCESS_FOLDER", "./data/success")
+FAILURE_FOLDER = os.getenv("FAILURE_FOLDER", "./data/failure")
 db = lancedb.connect(Config.LANCE_DB_PATH)
 
 try:
@@ -43,25 +43,46 @@ def story_id_exists(table, story_id):
     except Exception:
         return False
 
-def generate_embeddings():
+def ensure_project_folders(project_name):
+    """Ensure success and failure folders exist for the project"""
+    project_success_folder = os.path.join(SUCCESS_FOLDER, project_name)
+    project_failure_folder = os.path.join(FAILURE_FOLDER, project_name)
+    
+    # Create project folders if they don't exist
+    os.makedirs(project_success_folder, exist_ok=True)
+    os.makedirs(project_failure_folder, exist_ok=True)
+    
+    return project_success_folder, project_failure_folder
+
+def process_project_folder(project_folder_path, project_name):
+    """Process all files in a project folder"""
     files_processed = 0
     files_success = 0
     files_failed = 0
     
-    for file in os.listdir(UPLOAD_FOLDER):
-        file_path = os.path.join(UPLOAD_FOLDER, file)
-
-        if os.path.isdir(file_path):
-            continue
-
+    print(f"📁 Processing project: {project_name}")
+    
+    # Ensure project-specific success/failure folders
+    project_success_folder, project_failure_folder = ensure_project_folders(project_name)
+    
+    # Get all files in the project folder
+    try:
+        files = [f for f in os.listdir(project_folder_path) if os.path.isfile(os.path.join(project_folder_path, f))]
+    except Exception as e:
+        print(f"❌ Error reading project folder {project_name}: {e}")
+        return 0, 0, 0
+    
+    for file in files:
+        file_path = os.path.join(project_folder_path, file)
         files_processed += 1
-        print(f"📄 Processing {file}...")
+        
+        print(f"📄 Processing {file} in project {project_name}...")
 
         text = extract_text(file_path)
 
         if not text:
             print(f"❌ Skipping {file} — couldn't extract text.")
-            shutil.move(file_path, os.path.join(FAILURE_FOLDER, file))
+            shutil.move(file_path, os.path.join(project_failure_folder, file))
             files_failed += 1
             continue
 
@@ -70,7 +91,7 @@ def generate_embeddings():
 
             if story_id_exists(table, story_id):
                 print(f"⚠️ Skipping {file} — storyID '{story_id}' already exists.")
-                shutil.move(file_path, os.path.join(FAILURE_FOLDER, file))
+                shutil.move(file_path, os.path.join(project_failure_folder, file))
                 files_failed += 1
                 continue
 
@@ -80,13 +101,14 @@ def generate_embeddings():
                 embedding = EMBEDDING_MODEL.encode(text).tolist()
             except Exception as e:
                 print(f"❌ Embedding generation failed for {file}: {e}")
-                shutil.move(file_path, os.path.join(FAILURE_FOLDER, file))
+                shutil.move(file_path, os.path.join(project_failure_folder, file))
                 files_failed += 1
                 continue
 
             print(f"🔢 Vector length: {len(embedding)} for {file}")
 
             table.add([{
+                "project_id": project_name,
                 "vector": embedding,
                 "storyID": story_id,
                 "storyDescription": story_description,
@@ -94,21 +116,83 @@ def generate_embeddings():
                 "filename": file,
                 "original_path": file_path,
                 "doc_content_text": text,
-                "embedding_timestamp": datetime.now().isoformat()
+                "embedding_timestamp": datetime.now(),
+                "source": "file"
             }])
 
-            shutil.move(file_path, os.path.join(SUCCESS_FOLDER, file))
-            print(f"✅ Stored {file} in LanceDB and moved to success.")
+            shutil.move(file_path, os.path.join(project_success_folder, file))
+            print(f"✅ Stored {file} in LanceDB and moved to {project_name}/success.")
             files_success += 1
         except Exception as e:
             print(f"❌ Error storing {file}: {e}")
-            shutil.move(file_path, os.path.join(FAILURE_FOLDER, file))
+            shutil.move(file_path, os.path.join(project_failure_folder, file))
             files_failed += 1
     
-    print(f"📊 [Embedding Generation] Summary: {files_processed} files processed, {files_success} successful, {files_failed} failed")
+    print(f"📊 [Project {project_name}] Summary: {files_processed} files processed, {files_success} successful, {files_failed} failed")
+    return files_processed, files_success, files_failed
+
+def generate_embeddings():
+    """Process all project folders in the upload directory"""
+    total_files_processed = 0
+    total_files_success = 0
+    total_files_failed = 0
+    projects_processed = 0
     
-    if files_success > 0:
-        print(f"🎉 {files_success} new stories added to LanceDB and ready for test case generation!")
+    print(f"🔍 Scanning upload folder: {UPLOAD_FOLDER}")
+    
+    # Ensure base success and failure folders exist
+    os.makedirs(SUCCESS_FOLDER, exist_ok=True)
+    os.makedirs(FAILURE_FOLDER, exist_ok=True)
+    
+    try:
+        # Get all project folders in the upload directory
+        project_folders = [f for f in os.listdir(UPLOAD_FOLDER) 
+                          if os.path.isdir(os.path.join(UPLOAD_FOLDER, f))]
+        
+        if not project_folders:
+            print("⚠️ No project folders found in upload directory")
+            print(f"📁 Expected structure: {UPLOAD_FOLDER}/")
+            print("   ├── Project1/")
+            print("   │   ├── story1.pdf")
+            print("   │   └── story2.docx")
+            print("   ├── Project2/")
+            print("   │   └── story3.txt")
+            print("   └── ...")
+            return
+        
+        print(f"📁 Found {len(project_folders)} project folders: {', '.join(project_folders)}")
+        
+        for project_folder in project_folders:
+            project_path = os.path.join(UPLOAD_FOLDER, project_folder)
+            
+            # Process each project folder
+            files_processed, files_success, files_failed = process_project_folder(project_path, project_folder)
+            
+            total_files_processed += files_processed
+            total_files_success += files_success
+            total_files_failed += files_failed
+            projects_processed += 1
+            
+            print(f"✅ Completed project: {project_folder}")
+            print("-" * 50)
+        
+        print(f"🎉 [Overall Summary] {projects_processed} projects processed")
+        print(f"📊 Total files: {total_files_processed} processed, {total_files_success} successful, {total_files_failed} failed")
+        
+        if total_files_success > 0:
+            print(f"🎉 {total_files_success} new stories added to LanceDB and ready for test case generation!")
+        
+        # Show folder structure
+        print(f"\n📁 Success folders created:")
+        for project in project_folders:
+            print(f"   ✅ {SUCCESS_FOLDER}/{project}/")
+        
+        print(f"\n📁 Failure folders created:")
+        for project in project_folders:
+            print(f"   ❌ {FAILURE_FOLDER}/{project}/")
+            
+    except Exception as e:
+        print(f"❌ Error processing upload folder: {e}")
 
 if __name__ == "__main__":
     generate_embeddings()

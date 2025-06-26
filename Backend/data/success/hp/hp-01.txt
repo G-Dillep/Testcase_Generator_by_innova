@@ -1,0 +1,6 @@
+User Story 1
+
+As a bank customer, I want to be able to view my account balance online, so that I can keep track of my finances.
+
+Acceptance Criteria:
+The system should display the current balance of the customer's account when they log in. The balance displayed should be accurate and up-to-date, reflecting the most recent transactions. The system should only display the balance of the account associated with the customer's login credentials, and not any other accounts. The system should provide a secure login process to ensure the confidentiality and privacy of the customer's account information.

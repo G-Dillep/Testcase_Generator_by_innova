@@ -1,0 +1,58 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pyc
+*.pdb
+*.egg-info/
+.venv/
+venv/
+ENV/
+.env.*
+
+# VSCode
+.vscode/
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+
+# Node.js / Next.js
+node_modules/
+.next/
+dist/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Build output
+build/
+out/
+
+# Misc
+*.swp
+*.swo
+*.bak
+*.tmp
+
+# Frontend
+frontend/test-case-generator/.next/
+frontend/test-case-generator/node_modules/
+frontend/test-case-generator/.env
+
+# Backend
+Backend/.env
+Backend/__pycache__/
+Backend/app/__pycache__/
+Backend/app/datapipeline/__pycache__/
+Backend/app/LLM/__pycache__/
+Backend/app/models/__pycache__/
+Backend/app/routes/__pycache__/
+Backend/app/services/__pycache__/
+Backend/app/utils/__pycache__/

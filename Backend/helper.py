@@ -13,6 +13,7 @@ def print_lancedb_table():
     # If you want to print just the story IDs:
     print("\nAll story IDs in LanceDB:")
     print(rows['storyID'].tolist())
+    print(rows['project_id'].tolist())
 
 if __name__ == "__main__":
     print_lancedb_table()

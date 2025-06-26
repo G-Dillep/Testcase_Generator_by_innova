@@ -1,0 +1,5 @@
+User Story 26
+
+As a student with a visual impairment, I want to be able to access course materials in alternative formats, such as Braille or audio, so that I can fully participate in class.  Acceptance criteria:  The platform should provide a feature to convert course materials into alternative formats such as Braille or audio. The platform should have a clear and easy-to-use interface for accessing alternative formats. The alternative formats should be available in a timely manner and should not cause delays or interruptions to the student's learning. The platform should comply with accessibility standards to ensure that it is compatible with screen readers and other assistive technologies.
+
+Acceptance Criteria:

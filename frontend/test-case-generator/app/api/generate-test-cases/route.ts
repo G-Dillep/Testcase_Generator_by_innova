@@ -72,12 +72,51 @@ function generateMockTestCases(feature: string) {
 Note: These are mock test cases generated for demonstration purposes. In a production environment, the AI would generate more specific test cases tailored to your exact feature requirements.`
 }
 
+// Mock function to generate QA support response when API key is not available
+function generateMockQASupport(question: string) {
+  const questionSnippet = question.length > 30 ? question.substring(0, 30) + "..." : question
+
+  return `# QA Support Response
+
+## Question: ${questionSnippet}
+
+## Answer:
+
+I'm here to help with software testing and QA-related questions! Here are some common topics I can assist with:
+
+### 🧪 **Testing Methodologies**
+- Unit Testing, Integration Testing, System Testing
+- Manual vs Automated Testing approaches
+- Test-Driven Development (TDD) and Behavior-Driven Development (BDD)
+
+### 🛠️ **Testing Tools & Frameworks**
+- Popular testing frameworks (JUnit, TestNG, PyTest, etc.)
+- Test automation tools (Selenium, Cypress, Playwright)
+- Performance testing tools (JMeter, LoadRunner)
+
+### 📋 **QA Processes**
+- Test planning and strategy
+- Bug reporting and tracking
+- Test case design and management
+- Quality metrics and KPIs
+
+### 🔍 **Best Practices**
+- Test case writing guidelines
+- Test data management
+- Environment setup and management
+- Continuous Integration/Continuous Testing
+
+**Note**: For test case generation based on your specific user stories, please use the RAG mode instead. I'm here to provide guidance and answer questions about QA processes and methodologies.
+
+What specific aspect of software testing would you like to learn more about?`
+}
+
 export async function POST(request: Request) {
   try {
     const { message, context, model } = await request.json()
 
     if (model === 'rag') {
-      // Call Flask backend RAG endpoint
+      // Call Flask backend RAG endpoint for test case generation
       const flaskRes = await fetch('http://127.0.0.1:5000/api/stories/rag-chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -90,17 +129,17 @@ export async function POST(request: Request) {
       return Response.json({ testCases: ragData.testCases });
     }
 
-    // Check if we have the Google API key
+    // Gemini mode - only for QA support questions, not test case generation
     const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY
 
     let responseText = ""
 
     if (!apiKey) {
-      console.log("API key not found, using mock test cases")
+      console.log("API key not found, using mock QA support response")
       // Use mock implementation when API key is not available
-      responseText = generateMockTestCases(message)
+      responseText = generateMockQASupport(message)
     } else {
-      // Use the real Gemini API when key is available
+      // Use the real Gemini API for QA support only
       const { text } = await generateText({
         model: google("gemini-1.5-flash"),
         providerOptions: {
@@ -108,30 +147,22 @@ export async function POST(request: Request) {
             apiKey: apiKey,
           },
         },
-        system: `You are an expert QA engineer and test case generator. Your role is to create comprehensive, detailed test cases for software features and user stories.
+        system: `You are an expert QA engineer and software testing consultant. Your role is to provide guidance, best practices, and answers to questions about software testing, quality assurance processes, and testing methodologies.
 
-When generating test cases, follow this structure:
-1. **Test Case ID**: Unique identifier
-2. **Test Case Title**: Clear, descriptive title
-3. **Objective**: What the test aims to verify
-4. **Preconditions**: Setup requirements
-5. **Test Steps**: Detailed step-by-step instructions
-6. **Expected Results**: What should happen
-7. **Priority**: High/Medium/Low
-8. **Test Type**: Functional/UI/Integration/etc.
+You should NOT generate test cases. Instead, focus on:
+- Explaining testing concepts and methodologies
+- Providing best practices for QA processes
+- Answering questions about testing tools and frameworks
+- Giving advice on test planning and strategy
+- Explaining different types of testing (unit, integration, system, etc.)
+- Discussing test automation approaches
+- Providing guidance on bug reporting and tracking
+- Explaining quality metrics and KPIs
 
-Generate multiple test cases covering:
-- Happy path scenarios
-- Edge cases
-- Error handling
-- Boundary conditions
-- Negative test cases
-- UI/UX validation
+Keep your responses professional, informative, and focused on QA/software testing topics. If someone asks for test case generation, politely redirect them to use the RAG mode instead.`,
+        prompt: `User Question: ${message}
 
-Format your response clearly with proper numbering and sections. Be thorough and professional.`,
-        prompt: `${context}: ${message}
-
-Please generate comprehensive test cases for this feature/story. Include both positive and negative test scenarios.`,
+Please provide a helpful answer about software testing, QA processes, or best practices. Do NOT generate test cases - focus on providing guidance and information.`,
         maxTokens: 2000,
       })
 
@@ -140,14 +171,14 @@ Please generate comprehensive test cases for this feature/story. Include both po
 
     return Response.json({ response: responseText })
   } catch (error) {
-    console.error("Error generating test cases:", error)
+    console.error("Error in QA support:", error)
 
     // Provide a more helpful error message and fallback to mock data
-    const mockResponse = generateMockTestCases("Error occurred, using fallback test cases")
+    const mockResponse = generateMockQASupport("Error occurred, using fallback QA support")
 
     return Response.json({
       response: mockResponse,
-      error: "API key missing or error occurred. Using mock test cases for demonstration.",
+      error: "API key missing or error occurred. Using mock QA support for demonstration.",
     })
   }
 }
