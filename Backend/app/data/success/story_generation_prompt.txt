@@ -1,0 +1,244 @@
+Project Context and Story Generation Guidelines
+
+SYSTEM CONTEXT:
+We are building an advanced AI-powered Test Case Generation System that automatically creates comprehensive test cases from user stories. The system:
+1. Takes complex user stories as input
+2. Analyzes them using semantic understanding
+3. Generates detailed test cases covering functional and non-functional requirements
+4. Performs impact analysis when stories affect each other
+5. Maintains test case traceability and coverage metrics
+
+TECHNICAL IMPLEMENTATION:
+1. Architecture:
+   - Backend: Python Flask API
+   - Frontend: Next.js with TypeScript
+   - Database: PostgreSQL for structured data
+   - Vector Store: LanceDB for semantic search
+   - LLM Integration: For test case generation and analysis
+
+2. Key Components:
+   - Story Vectorization: Converts stories to embeddings
+   - Semantic Search: Finds similar stories for context
+   - Test Case Generator: LLM-based test case creation
+   - Impact Analyzer: Identifies affected test cases
+   - Coverage Tracker: Monitors test coverage metrics
+
+3. Data Flow:
+   - Stories stored in PostgreSQL and LanceDB
+   - Test cases stored in JSON format
+   - Impact analysis results linked to original stories
+   - Coverage metrics updated in real-time
+
+4. Integration Points:
+   - JIRA API for story management
+   - CI/CD pipeline integration
+   - Test management system integration
+   - Reporting and analytics dashboard
+
+SYSTEM WORKFLOW:
+1. Story Processing:
+   - Stories are stored in our database with unique IDs
+   - Each story is analyzed for semantic content and dependencies
+   - Stories are vectorized for similarity matching
+   - Impact analysis is performed against existing stories
+
+2. Test Case Generation:
+   - LLM analyzes the story and generates test cases
+   - Test cases are categorized (Positive, Negative, Validation, etc.)
+   - Each test case includes detailed steps, data, and validation criteria
+   - Coverage metrics are tracked and maintained
+
+3. Impact Analysis:
+   - New stories are compared with existing ones
+   - System identifies affected test cases
+   - Generates modified test cases for impacted stories
+   - Maintains traceability between related stories
+
+4. Quality Metrics:
+   - Minimum 50 test cases per story
+   - Distribution across test categories
+   - Coverage of all acceptance criteria
+   - Traceability to requirements
+   - Impact analysis coverage
+
+CURRENT CHALLENGE:
+Our system currently generates around 30 test cases per story, but we need more comprehensive coverage (50+ test cases per story). To achieve this, we need:
+1. More complex, detailed user stories that naturally require extensive testing
+2. Stories with multiple integration points and dependencies
+3. Stories covering various technical aspects (security, performance, compliance)
+4. Stories that impact each other, creating ripple effects in test coverage
+
+YOUR TASK:
+Generate complex, enterprise-grade user stories that will naturally require our system to generate 50+ test cases per story. These stories should be realistic, technically detailed, and follow industry best practices.
+
+Projects Overview:
+1. HP (Healthcare Platform)
+   Focus: Healthcare management, patient records, medical workflows
+   Key Areas: Security, compliance, integrations, patient safety
+
+2. Project-Vajra
+   Focus: Enterprise security and access management
+   Key Areas: Authentication, authorization, audit trails, compliance
+
+3. Innowatch
+   Focus: IoT device monitoring and management
+   Key Areas: Real-time monitoring, device management, alerts, analytics
+
+4. Testcasegenerator
+   Focus: Automated test case generation and management
+   Key Areas: Test automation, coverage analysis, reporting
+
+5. Prompt-engineering
+   Focus: AI/ML model management and prompt optimization
+   Key Areas: Model versioning, prompt templates, performance tracking
+
+For each project, generate 4-10 user stories with the following characteristics:
+
+Story Structure Requirements:
+1. Title: Clear, concise title reflecting the feature
+2. User Role: Specific role (e.g., "As a Senior Healthcare Administrator" instead of just "As a user")
+3. Feature Description: What they want to accomplish
+4. Business Value: Clear explanation of why this feature is important
+
+Each story MUST include:
+
+1. Detailed Acceptance Criteria:
+   - Minimum 10 main criteria
+   - Each criterion should have 3-5 sub-requirements
+   - Include edge cases and special conditions
+   - Specify validation rules and constraints
+
+2. Technical Requirements:
+   - Integration points with other systems
+   - Performance requirements (response times, throughput)
+   - Security requirements
+   - Data handling requirements
+   - Compliance requirements
+
+3. Business Rules:
+   - Complex workflow conditions
+   - Role-based access controls
+   - Data validation rules
+   - Business process constraints
+   - Regulatory compliance rules
+
+4. Integration Requirements:
+   - External system interactions
+   - API specifications
+   - Data synchronization requirements
+   - Error handling and recovery
+
+5. Non-functional Requirements:
+   - Performance metrics
+   - Security standards
+   - Accessibility requirements
+   - Scalability considerations
+   - Audit and logging requirements
+
+6. Data Requirements:
+   - Data structures
+   - Validation rules
+   - Data retention policies
+   - Privacy requirements
+   - Backup and recovery
+
+Complexity Factors (Include at least 5 per story):
+1. Multi-step Workflows
+2. Role-based Access Control
+3. Complex Business Rules
+4. Integration with Multiple Systems
+5. Real-time Processing
+6. Compliance Requirements
+7. Data Validation Rules
+8. Error Handling Scenarios
+9. Performance Requirements
+10. Security Considerations
+
+Example Complexity Scenarios:
+
+1. Healthcare (HP):
+   - Multi-factor biometric authentication for accessing sensitive patient records
+   - Real-time patient monitoring with automated alert escalation
+   - Cross-department workflow management with regulatory compliance
+
+2. Security (Project-Vajra):
+   - Zero-trust security implementation with continuous verification
+   - Multi-tenant access control with dynamic policy enforcement
+   - Security incident response automation with ML-based threat detection
+
+3. IoT (Innowatch):
+   - Real-time device fleet management with predictive maintenance
+   - Cross-platform IoT data aggregation with anomaly detection
+   - Automated device provisioning with security compliance
+
+4. Test Automation (Testcasegenerator):
+   - AI-powered test scenario generation with coverage optimization
+   - Cross-browser test execution with parallel processing
+   - Test data management with synthetic data generation
+
+5. AI/ML (Prompt-engineering):
+   - Model version control with automated performance tracking
+   - Dynamic prompt optimization with A/B testing
+   - Multi-model orchestration with fallback handling
+
+Test Case Considerations (Each story should naturally require):
+1. Minimum 50 test cases covering:
+   - 15+ positive scenarios
+   - 15+ negative scenarios
+   - 10+ validation scenarios
+   - 5+ integration scenarios
+   - 5+ performance scenarios
+
+2. Test Coverage Areas:
+   - Functional requirements
+   - Business rules
+   - Integration points
+   - Security requirements
+   - Performance criteria
+   - Error handling
+   - Edge cases
+   - User interface
+   - Data validation
+   - Compliance requirements
+
+Example Story Complexity:
+Instead of:
+"As a user, I want to reset my password"
+
+Write:
+"As a Healthcare Administrator, I want to implement a secure password reset workflow that includes:
+- Multi-factor authentication
+- Biometric verification
+- Device trust scoring
+- Location-based risk assessment
+- Security policy compliance checks
+- Audit trail generation
+- Cross-device synchronization
+- Integration with SIEM systems
+- Compliance with HIPAA/GDPR
+- Real-time security policy enforcement"
+
+Format Requirements:
+1. Write each story in a structured format with clear sections
+2. Include all required components (acceptance criteria, technical requirements, etc.)
+3. Ensure each requirement is specific and testable
+4. Include clear success criteria
+5. Specify dependencies and integration points
+
+Remember:
+- Each story should be complex enough to warrant 50+ test cases
+- Include multiple integration points
+- Incorporate security and compliance requirements
+- Consider performance and scalability
+- Include error handling and edge cases
+- Specify data validation rules
+- Include real-time processing requirements where applicable
+
+Output Format:
+For each project, provide:
+1. Project overview
+2. 4-10 detailed stories following the above structure
+3. Dependencies between stories
+4. Integration points
+5. Technical considerations
+6. Compliance requirements 

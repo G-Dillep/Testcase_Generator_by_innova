@@ -2,8 +2,6 @@
 
 import { useState, useEffect, useRef } from "react"
 import {
-  MessageCircle,
-  X,
   Download,
   Search,
   Eye,
@@ -22,7 +20,11 @@ import {
   FileText,
   RefreshCw,
   Calendar,
+  ChevronUp,
+  ChevronDown,
+  Brain,
 } from "lucide-react"
+import { Chatbot } from "@/components/chatbot"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -33,7 +35,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { useRouter } from "next/navigation"
 import { api, Story } from "@/lib/api"
 import { toast } from "sonner"
-import { Select } from "@/components/ui/select"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 
 interface FormData {
   storyId: string
@@ -89,47 +91,100 @@ function calculateDuration(embeddingTime: string | null, testCaseTime: string | 
 function NextReloadBanner() {
   const [nextReload, setNextReload] = useState<Date | null>(null);
   const [timeLeft, setTimeLeft] = useState<string>("");
+  const [isTriggering, setIsTriggering] = useState(false);
+
+  const fetchNextReload = async () => {
+    try {
+      const response = await fetch("http://127.0.0.1:5001/api/scheduler/next-reload");
+      const text = await response.text();
+      const date = new Date(text.trim());
+      if (!isNaN(date.getTime())) {
+        setNextReload(date);
+      }
+    } catch (error) {
+      console.error("Error fetching next reload time:", error);
+    }
+  };
+
+  const triggerReload = async () => {
+    try {
+      setIsTriggering(true);
+      const response = await fetch("http://127.0.0.1:5001/api/scheduler/trigger", {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      if (response.ok) {
+        toast.success('Scheduler triggered successfully!');
+        setTimeout(fetchNextReload, 2000);
+      } else {
+        toast.error('Failed to trigger scheduler');
+      }
+    } catch (error) {
+      console.error("Error triggering reload:", error);
+      toast.error('Failed to trigger scheduler');
+    } finally {
+      setIsTriggering(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchNextReload = async () => {
-      try {
-        const response = await fetch("http://127.0.0.1:5000/api/stories/next-reload");
-        const text = await response.text();
-        const date = new Date(text.trim());
-        if (!isNaN(date.getTime())) {
-          setNextReload(date);
-        }
-      } catch (error) {
-        console.error("Error fetching next reload time:", error);
-      }
-    };
-
     fetchNextReload();
+    const pollInterval = setInterval(fetchNextReload, 30000);
+    return () => clearInterval(pollInterval);
   }, []);
 
   useEffect(() => {
     if (!nextReload) return;
-    const interval = setInterval(() => {
+    
+    const updateCountdown = () => {
       const now = new Date();
       const diff = Math.max(0, nextReload.getTime() - now.getTime());
+      
+      if (diff <= 0) {
+        setTimeLeft("Reloading...");
+        return;
+      }
+      
       const hours = String(Math.floor(diff / 3600000)).padStart(2, '0');
       const minutes = String(Math.floor((diff % 3600000) / 60000)).padStart(2, '0');
       const seconds = String(Math.floor((diff % 60000) / 1000)).padStart(2, '0');
       setTimeLeft(`${hours}:${minutes}:${seconds}`);
-    }, 1000);
-    return () => clearInterval(interval);
+    };
+
+    updateCountdown();
+    const countdownInterval = setInterval(updateCountdown, 1000);
+    return () => clearInterval(countdownInterval);
   }, [nextReload]);
 
   return (
-    <div className="w-full flex justify-center mb-4">
-      <div className="flex items-center gap-2 bg-blue-100 border border-blue-300 text-blue-900 px-6 py-3 rounded-lg shadow font-semibold text-lg">
-        <Clock className="w-5 h-5 text-blue-600" />
-        {timeLeft ? (
-          <>Next backend reload in <span className="font-mono">{timeLeft}</span></>
-        ) : (
-          "Loading next reload time..."
-        )}
+    <div className="flex items-center gap-4 ml-auto bg-white px-4 py-2 rounded-xl shadow-sm border border-gray-200">
+      <span className="text-sm font-medium text-gray-600">Next Scheduler Runs At:</span>
+      <div className="flex items-center gap-2">
+        <Clock className="w-4 h-4 text-blue-500" />
+        <span className="font-mono text-sm font-semibold text-gray-900 min-w-[85px]">
+          {timeLeft || "Loading..."}
+        </span>
       </div>
+      <Button
+        onClick={triggerReload}
+        disabled={isTriggering}
+        className="h-9 px-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-lg font-semibold transition-all duration-200 flex items-center gap-2 shadow-md hover:shadow-lg transform hover:scale-105"
+      >
+        {isTriggering ? (
+          <>
+            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            <span>Triggering...</span>
+          </>
+        ) : (
+          <>
+            <RefreshCw className="w-4 h-4" />
+            <span>Trigger</span>
+          </>
+        )}
+      </Button>
     </div>
   );
 }
@@ -172,8 +227,6 @@ export default function TestCaseGenerator() {
   })
 
   const [showModal, setShowModal] = useState(false)
-  const [showChatbot, setShowChatbot] = useState(false)
-  const [chatMessage, setChatMessage] = useState("")
   const [selectedTestCases, setSelectedTestCases] = useState<string[]>([])
   const [searchPerformed, setSearchPerformed] = useState(false)
   const [activeTab, setActiveTab] = useState("dashboard")
@@ -183,7 +236,7 @@ export default function TestCaseGenerator() {
     {
       role: "assistant",
       content:
-        "Hello! I can help you generate test cases. Describe a feature or user story, and I'll create comprehensive test cases for you.",
+        "Hello! I'm your AI Test Case Assistant. I can help you in two ways:\n\n🔍 **RAG Mode (Default)**: Generate comprehensive test cases based on your user stories and existing test case database.\n\n💬 **Gemini Mode**: Ask questions about software testing, QA processes, and best practices.\n\nWhat would you like to do today?",
     },
   ])
   const [isGenerating, setIsGenerating] = useState(false)
@@ -195,22 +248,41 @@ export default function TestCaseGenerator() {
   const router = useRouter()
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
-  const [perPage] = useState(10)
+  const [perPage, setPerPage] = useState(10)
+  const [totalStories, setTotalStories] = useState(0)
   const [dateFilter, setDateFilter] = useState<{from: string, to: string}>({from: '', to: ''});
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [selectedStory, setSelectedStory] = useState<Story | null>(null);
   const [showStoryContent, setShowStoryContent] = useState(false);
   const [lastReloadTime, setLastReloadTime] = useState<string | null>(null);
-  const [selectedModel, setSelectedModel] = useState<'gemini' | 'rag'>('gemini');
-  const [chatbotWidth, setChatbotWidth] = useState(400);
-  const [chatbotHeight, setChatbotHeight] = useState(500);
-  const minWidth = 320;
-  const minHeight = 350;
-  const maxWidth = 700;
-  const maxHeight = 800;
-  const isResizing = useRef(false);
-  const lastMousePosition = useRef({ x: 0, y: 0 });
-  const [resizeDir, setResizeDir] = useState<string | null>(null);
+  const [selectedModel, setSelectedModel] = useState<'gemini' | 'rag'>('rag');
+  const [projects, setProjects] = useState<string[]>([]);
+  const [selectedProject, setSelectedProject] = useState<string>('');
+  const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
+  const [uploadForm, setUploadForm] = useState({
+    projectId: '',
+    storyId: '',
+    content: '',
+    file: null as File | null
+  });
+  const [newProjectName, setNewProjectName] = useState('');
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState<{
+    type: 'success' | 'error' | 'info';
+    message: string;
+  } | null>(null);
+  const [showUploadForm, setShowUploadForm] = useState(false);
+  const [showContentDialog, setShowContentDialog] = useState(false);
+
+  // Auto-remove success messages after 5 seconds
+  useEffect(() => {
+    if (uploadStatus?.type === 'success') {
+      const timer = setTimeout(() => {
+        setUploadStatus(null);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [uploadStatus]);
 
   // Update time on mount and every second
   useEffect(() => {
@@ -230,23 +302,43 @@ export default function TestCaseGenerator() {
 
   // Fetch paginated stories from backend
   const fetchStories = async (page = 1, perPage = 10) => {
-    setLoading(true);
     try {
-      const res = await fetch(`http://127.0.0.1:5000/api/stories/?page=${page}&per_page=${perPage}`);
-      const data = await res.json();
-      setStories(data.stories || []);
-      setTotalPages(data.total_pages || 1);
-      setCurrentPage(data.current_page || 1);
-      setLastReloadTime(data.last_reload_time);
+      setLoading(true);
+      const response = await api.getStories(page, perPage, dateFilter.from, dateFilter.to, selectedProject, sortOrder);
+      
+      if (response.stories && Array.isArray(response.stories)) {
+        setStories(response.stories);
+        setTotalPages(Math.ceil(response.pagination.total / response.pagination.per_page));
+        setTotalStories(response.pagination.total);
+        setCurrentPage(response.pagination.page);
+      } else {
+        console.error('Invalid response format:', response);
+        toast.error('Failed to fetch stories: Invalid response format');
+      }
+    } catch (error) {
+      console.error('Error fetching stories:', error);
+      toast.error('Failed to fetch stories');
     } finally {
       setLoading(false);
     }
   };
 
+  const fetchProjects = async () => {
+    try {
+      const response = await api.getProjects();
+      setProjects(response.projects);
+    } catch (error) {
+      console.error('Error fetching projects:', error);
+    }
+  };
+
   useEffect(() => {
     fetchStories(currentPage, perPage);
-    // eslint-disable-next-line
-  }, [currentPage, perPage]);
+  }, [currentPage, dateFilter, selectedProject, sortOrder]);
+
+  useEffect(() => {
+    fetchProjects();
+  }, []);
 
   // Debug: log stories and their timestamps
   useEffect(() => {
@@ -287,6 +379,9 @@ export default function TestCaseGenerator() {
         });
       }
       setStories(filtered);
+      if (filtered.length === 0) {
+        toast.info('No stories found with the specified ID');
+      }
       setLoading(false);
       return;
     }
@@ -296,6 +391,14 @@ export default function TestCaseGenerator() {
       try {
         const data = await api.searchStories(formData.storyDescription.trim(), 3); // fetch up to 3 similar stories
         let filtered = data.stories || [];
+        
+        if (filtered.length === 0) {
+          setStories([]);
+          toast.info('No matching stories found');
+          setLoading(false);
+          return;
+        }
+        
         // Further filter by date range if set
         if (formData.fromDate || formData.toDate) {
           filtered = filtered.filter((story: any) => {
@@ -309,6 +412,11 @@ export default function TestCaseGenerator() {
           });
         }
         setStories(filtered);
+        if (filtered.length === 0) {
+          toast.info('No stories found matching the description and date range');
+        } else {
+          toast.success(`Found ${filtered.length} matching story${filtered.length > 1 ? 'ies' : ''}`);
+        }
       } catch (e) {
         setStories([]);
         toast.error('Failed to perform similarity search.');
@@ -329,6 +437,9 @@ export default function TestCaseGenerator() {
         return true;
       });
       setStories(filtered);
+      if (filtered.length === 0) {
+        toast.info('No stories found in the specified date range');
+      }
       setLoading(false);
       return;
     }
@@ -376,15 +487,13 @@ export default function TestCaseGenerator() {
     testCaseCreatedTime: new Date(Date.now() + 20 * 60000).toLocaleString(),
   })
 
-  const handleSendMessage = async () => {
-    if (!chatMessage.trim() || isGenerating) return
+  const handleSendMessage = async (message: string) => {
+    if (!message.trim() || isGenerating) return
 
-    const userMessage = chatMessage.trim()
-    setChatMessage("")
     setApiError(null)
 
     // Add user message to chat
-    setChatMessages((prev) => [...prev, { role: "user", content: userMessage }])
+    setChatMessages((prev) => [...prev, { role: "user", content: message }])
     setIsGenerating(true)
 
     try {
@@ -394,8 +503,8 @@ export default function TestCaseGenerator() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          message: userMessage,
-          context: "Generate comprehensive test cases for the following feature or user story",
+          message: message,
+          context: selectedModel === 'rag' ? "Generate comprehensive test cases for the following feature or user story" : "Provide QA support and guidance",
           model: selectedModel,
         }),
       })
@@ -403,7 +512,7 @@ export default function TestCaseGenerator() {
       const data = await response.json()
 
       if (!response.ok) {
-        throw new Error(data.error || "Failed to generate test cases")
+        throw new Error(data.error || "Failed to generate response")
       }
 
       if (data.error) {
@@ -430,18 +539,23 @@ export default function TestCaseGenerator() {
       } else if (selectedModel === 'rag' && data.testCases) {
         setChatMessages((prev) => [...prev, { role: "assistant", content: formatRagTestCases(data.testCases) }])
       } else {
+        // For Gemini mode, display the response directly
         setChatMessages((prev) => [...prev, { role: "assistant", content: data.response }])
       }
     } catch (error) {
-      console.error("Error generating test cases:", error)
+      console.error("Error generating response:", error)
       setChatMessages((prev) => [
         ...prev,
         {
           role: "assistant",
-          content: "I'm using mock test cases for demonstration. In production, you would connect to the Gemini API.",
+          content: selectedModel === 'rag' 
+            ? "I'm using mock test cases for demonstration. In production, you would connect to the RAG backend."
+            : "I'm using mock QA support for demonstration. In production, you would connect to the Gemini API.",
         },
       ])
-      setApiError("Using mock test cases. To use Gemini API, add GOOGLE_GENERATIVE_AI_API_KEY to your environment.")
+      setApiError(selectedModel === 'rag' 
+        ? "Using mock test cases. To use RAG backend, ensure the Flask server is running."
+        : "Using mock QA support. To use Gemini API, add GOOGLE_GENERATIVE_AI_API_KEY to your environment.")
     } finally {
       setIsGenerating(false)
     }
@@ -514,8 +628,9 @@ export default function TestCaseGenerator() {
     }
   };
 
-  const handleClearDateFilter = async () => {
+  const handleClearFilters = async () => {
     setDateFilter({from: '', to: ''});
+    setSelectedProject(''); // Clear project filter
     setFormData(prev => ({ ...prev, storyId: '', storyDescription: '' }));
     setLoading(true);
     try {
@@ -529,52 +644,125 @@ export default function TestCaseGenerator() {
   };
 
   // Pagination controls
-  const renderPagination = () => (
-    <div className="flex justify-center items-center gap-2 mt-4">
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-        disabled={currentPage === 1}
-        className="rounded"
-      >
-        <ChevronLeft className="h-4 w-4" />
-      </Button>
-      {Array.from({ length: totalPages }, (_, i) => (
-        <Button
-          key={i + 1}
-          variant={currentPage === i + 1 ? "default" : "outline"}
-          size="sm"
-          onClick={() => setCurrentPage(i + 1)}
-          className="rounded px-3"
-        >
-          {i + 1}
-        </Button>
-      ))}
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-        disabled={currentPage === totalPages}
-        className="rounded"
-      >
-        <ChevronRight className="h-4 w-4" />
-      </Button>
-    </div>
-  );
+  const renderPagination = () => {
+    if (totalPages <= 0) return null;
 
-  const toggleRowExpand = (e: React.MouseEvent, storyId: string) => {
-    e.stopPropagation();
-    setExpandedRows(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(storyId)) {
-        newSet.delete(storyId);
-      } else {
-        newSet.add(storyId);
+    // Calculate the range of page numbers to display
+    const pageRange = 5; // Number of page buttons to show
+    let startPage = Math.max(1, currentPage - Math.floor(pageRange / 2));
+    let endPage = Math.min(totalPages, startPage + pageRange - 1);
+
+    // Adjust start page if we're near the end
+    if (endPage - startPage + 1 < pageRange) {
+      startPage = Math.max(1, endPage - pageRange + 1);
+    }
+
+    // Generate array of page numbers to display
+    const pages = Array.from({ length: endPage - startPage + 1 }, (_, i) => startPage + i);
+
+    const handlePageChange = async (newPage: number) => {
+      if (newPage !== currentPage && newPage >= 1 && newPage <= totalPages) {
+        await fetchStories(newPage, perPage);
       }
-      return newSet;
-    });
+    };
+
+    const handlePerPageChange = async (newPerPage: number) => {
+      setPerPage(newPerPage);
+      await fetchStories(1, newPerPage);
+    };
+
+    return (
+      <div className="flex items-center justify-between px-4 py-4 bg-gray-50 border-t border-gray-200">
+        <div className="flex items-center gap-3">
+          <span className="text-sm font-medium text-gray-700">
+            Showing {((currentPage - 1) * perPage) + 1} to {Math.min(currentPage * perPage, totalStories)} of {totalStories} stories
+          </span>
+          <div className="flex items-center gap-2">
+            <label className="text-sm font-medium text-gray-700">Per page:</label>
+            <select
+              value={perPage}
+              onChange={(e) => handlePerPageChange(Number(e.target.value))}
+              className="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-200"
+            >
+              <option value={5}>5</option>
+              <option value={10}>10</option>
+              <option value={20}>20</option>
+              <option value={50}>50</option>
+            </select>
+          </div>
+        </div>
+        
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={() => handlePageChange(currentPage - 1)}
+            disabled={currentPage === 1}
+            className="px-3 py-2 border border-gray-300 hover:border-gray-400 hover:bg-gray-50 rounded font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+          >
+            <ChevronLeft className="h-4 w-4" />
+            Previous
+          </Button>
+          
+          <div className="flex items-center gap-1">
+            {/* First page button */}
+            {startPage > 1 && (
+              <>
+                <Button
+                  variant="outline"
+                  onClick={() => handlePageChange(1)}
+                  className="px-3 py-2 border border-gray-300 hover:border-gray-400 hover:bg-gray-50 rounded font-medium transition-colors text-sm"
+                >
+                  1
+                </Button>
+                {startPage > 2 && <span className="px-2">...</span>}
+              </>
+            )}
+
+            {/* Page number buttons */}
+            {pages.map((pageNum) => (
+              <Button
+                key={pageNum}
+                variant={currentPage === pageNum ? "default" : "outline"}
+                onClick={() => handlePageChange(pageNum)}
+                className={`px-3 py-2 rounded font-medium transition-colors text-sm ${
+                  currentPage === pageNum 
+                    ? 'bg-blue-600 text-white' 
+                    : 'border border-gray-300 hover:border-gray-400 hover:bg-gray-50'
+                }`}
+              >
+                {pageNum}
+              </Button>
+            ))}
+
+            {/* Last page button */}
+            {endPage < totalPages && (
+              <>
+                {endPage < totalPages - 1 && <span className="px-2">...</span>}
+                <Button
+                  variant="outline"
+                  onClick={() => handlePageChange(totalPages)}
+                  className="px-3 py-2 border border-gray-300 hover:border-gray-400 hover:bg-gray-50 rounded font-medium transition-colors text-sm"
+                >
+                  {totalPages}
+                </Button>
+              </>
+            )}
+          </div>
+          
+          <Button
+            variant="outline"
+            onClick={() => handlePageChange(currentPage + 1)}
+            disabled={currentPage === totalPages}
+            className="px-3 py-2 border border-gray-300 hover:border-gray-400 hover:bg-gray-50 rounded font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+          >
+            Next
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+    );
   };
+
 
   const handleViewStoryContent = (e: React.MouseEvent, story: Story) => {
     e.stopPropagation();
@@ -582,82 +770,101 @@ export default function TestCaseGenerator() {
     setShowStoryContent(true);
   };
 
-  function handleResizeMouseDown(dir: string) {
-    isResizing.current = true;
-    setResizeDir(dir);
-    document.body.style.userSelect = 'none';
-  }
+  // Handle file upload
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      setUploadForm(prev => ({ ...prev, file }));
+    }
+  };
 
-  useEffect(() => {
-    function handleMouseMove(e: MouseEvent) {
-      if (!isResizing.current || !resizeDir) return;
-      if (resizeDir.includes('e')) {
-        setChatbotWidth((w) => Math.max(minWidth, Math.min(maxWidth, w + e.movementX)));
-      }
-      if (resizeDir.includes('s')) {
-        setChatbotHeight((h) => Math.max(minHeight, Math.min(maxHeight, h + e.movementY)));
-      }
-      if (resizeDir.includes('w')) {
-        setChatbotWidth((w) => Math.max(minWidth, Math.min(maxWidth, w - e.movementX)));
-      }
-      if (resizeDir.includes('n')) {
-        setChatbotHeight((h) => Math.max(minHeight, Math.min(maxHeight, h - e.movementY)));
-      }
+  // Handle story upload
+  const handleUploadStory = async () => {
+    const projectId = uploadForm.projectId === 'new' ? newProjectName : uploadForm.projectId;
+    
+    if (!projectId || !uploadForm.storyId || (!uploadForm.content && !uploadForm.file)) {
+      setUploadStatus({
+        type: 'error',
+        message: 'Please fill in Project, Story ID, and either type content or upload a document'
+      });
+      return;
     }
-    function handleMouseUp() {
-      isResizing.current = false;
-      setResizeDir(null);
-      document.body.style.userSelect = '';
+
+    setIsUploading(true);
+    setUploadStatus({
+      type: 'info',
+      message: 'Uploading story and generating test cases...'
+    });
+
+    try {
+      const formData = new FormData();
+      formData.append('project_id', projectId);
+      formData.append('story_id', uploadForm.storyId);
+      formData.append('content', uploadForm.content);
+      if (uploadForm.file) {
+        formData.append('file', uploadForm.file);
+      }
+
+      const response = await fetch('/api/upload-story', {
+        method: 'POST',
+        body: formData
+      });
+
+      const result = await response.json();
+
+      if (response.ok) {
+        setUploadStatus({
+          type: 'success',
+          message: result.message + (result.description ? ` AI Description: "${result.description}"` : '')
+        });
+        
+        // Reset form
+        setUploadForm({
+          projectId: '',
+          storyId: '',
+          content: '',
+          file: null
+        });
+        setNewProjectName('');
+        
+        // Refresh stories list and projects
+        fetchStories();
+        fetchProjects();
+      } else {
+        setUploadStatus({
+          type: 'error',
+          message: result.error || 'Upload failed'
+        });
+      }
+    } catch (error) {
+      setUploadStatus({
+        type: 'error',
+        message: 'Network error. Please try again.'
+      });
+    } finally {
+      setIsUploading(false);
     }
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, [resizeDir]);
+  };
 
   return (
-    <div className="min-h-screen bg-gray-50 pt-32 px-4 flex flex-col font-sans">
-      {/* Fixed Header */}
-      <header className="fixed top-0 left-0 w-full z-50 bg-white shadow-sm border-b border-gray-300 px-4 md:px-8 py-4">
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <header className="fixed top-0 left-0 w-full z-50 bg-background shadow-sm border-b border-border px-4 md:px-8 py-4">
         <div className="flex justify-between items-center">
-          {/* Logo in top left */}
           <div className="flex-shrink-0">
             <img src="/Logo-New.svg" alt="Innova Solutions" className="h-12 w-auto" />
           </div>
-
-          {/* Main heading */}
           <div className="text-center">
-            <h1 className="text-3xl font-bold text-blue-800">Test Case Generator</h1>
-            <p className="text-sm text-blue-600 font-semibold mt-1">Powered by Gen AI</p>
+            <h1 className="text-3xl font-bold text-primary">Test Forge AI</h1>
+            <p className="text-sm text-muted-foreground font-semibold mt-1">Powered by Gen AI</p>
           </div>
-
-          {/* Right section with time, date, bell, and team */}
           <div className="flex-shrink-0 flex items-center space-x-4">
-            {/* Time and Date */}
             <div className="text-right">
-              <div className="text-lg font-bold text-slate-800">
+              <div className="text-lg font-bold text-foreground">
                 {currentTime || 'Loading...'}
               </div>
-              <div className="text-sm text-slate-600">{new Date().toLocaleDateString()}</div>
+              <div className="text-sm text-muted-foreground">{new Date().toLocaleDateString()}</div>
             </div>
-
-            {/* Bell notification icon */}
-            <div className="relative">
-              <div className="w-3 h-3 bg-red-400 rounded-full absolute -top-1 -right-1"></div>
-              <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center">
-                <svg className="w-4 h-4 text-gray-600" fill="currentColor" viewBox="0 0 20 20">
-                  <path
-                    fillRule="evenodd"
-                    d="M10 2C8.13 2 6.6 3.53 6.6 5.4V9.8c0 .74-.4 1.42-1.05 1.79L4.2 12.4c-.65.37-1.05 1.05-1.05 1.79 0 1.16.94 2.1 2.1 2.1h9.5c1.16 0 2.1-.94 2.1-2.1 0-.74-.4-1.42-1.05-1.79l-1.35-.81c-.65-.37-1.05-1.05-1.05-1.79V5.4C13.4 3.53 11.87 2 10 2z"
-                    clipRule="evenodd"
-                  />
-                </svg>
-              </div>
-            </div>
-
-            {/* Team Delta */}
             <div className="bg-blue-500 text-white px-4 py-2 rounded-full flex items-center space-x-2">
               <div className="w-6 h-6 bg-white/20 rounded-full flex items-center justify-center">
                 <Triangle className="h-3 w-3 fill-white" />
@@ -671,182 +878,510 @@ export default function TestCaseGenerator() {
         </div>
       </header>
 
-      <div className="flex-grow">
-        <div className="max-w-[95%] mx-auto mb-8">
-          <div className="flex items-center justify-between mb-4">
-            <h1 className="text-2xl font-bold text-gray-900">User Stories</h1>
+      <div className="w-full py-6 pt-28 px-2">
+        {/* Search Section */}
+        <div className="mb-8">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-2xl font-bold bg-gradient-to-r from-gray-800 to-gray-600 bg-clip-text text-transparent">
+              {showUploadForm ? 'Upload User Story' : 'Search User Stories'}
+            </h2>
+            <div className="flex items-center gap-2">
+              <Button
+                onClick={() => setShowUploadForm(!showUploadForm)}
+                className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold rounded-xl px-4 py-2 shadow-lg transform transition-all duration-200 hover:scale-105 flex items-center gap-2"
+              >
+                {showUploadForm ? (
+                  <>
+                    <Search className="w-4 h-4" />
+                    Search Stories
+                  </>
+                ) : (
+                  <>
+                    <FileText className="w-4 h-4" />
+                    Upload Document
+                  </>
+                )}
+              </Button>
+            </div>
           </div>
 
-          <Card className="shadow-lg border border-gray-200 rounded-xl overflow-hidden">
-            <CardContent className="space-y-6 p-6 bg-white">
-              {/* Search and Filter Section */}
+          <Card className="shadow-xl border-0 bg-gradient-to-r from-white to-slate-50/50 overflow-hidden">
+            <CardContent className="space-y-6 px-2 py-6 bg-white">
+              {!showUploadForm ? (
+                <>
+                  <div className="grid grid-cols-2 gap-6">
+                    <div className="space-y-2">
+                      <label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+                        <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                        Story ID
+                      </label>
+                      <Input
+                        placeholder="Enter Story ID"
+                        value={formData.storyId}
+                        onChange={(e) => handleInputChange("storyId", e.target.value)}
+                        className="w-full border-2 border-gray-200 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 h-10 rounded-xl shadow-sm"
+                      />
+                    </div>
 
-              
+                    <div className="space-y-2">
+                      <label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+                        <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                        Story Description
+                      </label>
+                      <Textarea
+                        placeholder="Enter story description..."
+                        rows={2}
+                        value={formData.storyDescription}
+                        onChange={(e) => handleInputChange("storyDescription", e.target.value)}
+                        className="w-full border-2 border-gray-200 focus:border-green-400 focus:ring-2 focus:ring-green-100 resize-none rounded-xl shadow-sm"
+                      />
+                    </div>
+                  </div>
 
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Story ID</label>
-                <Input
-                  placeholder="Enter Story ID"
-                  value={formData.storyId}
-                  onChange={(e) => handleInputChange("storyId", e.target.value)}
-                  className="border-gray-300 focus:border-gray-400 focus:ring-gray-400 h-10 rounded-lg"
-                />
-              </div>
+                  <div className="flex justify-end pt-4">
+                    <Button
+                      onClick={handleSearch}
+                      className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold rounded-xl px-8 py-3 shadow-lg transform transition-all duration-200 hover:scale-105 flex items-center gap-2"
+                    >
+                      <Search className="w-5 h-5" />
+                      Search Stories
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <div className="space-y-6">
+                  <div className="grid grid-cols-2 gap-6">
+                    <div className="space-y-2">
+                      <label className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                        <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                        Project *
+                      </label>
+                      <select
+                        value={uploadForm.projectId}
+                        onChange={(e) => setUploadForm(prev => ({ ...prev, projectId: e.target.value }))}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:border-blue-400 focus:ring-1 focus:ring-blue-200 transition-colors bg-white h-10"
+                      >
+                        <option value="">Select a project</option>
+                        {projects.map((project) => (
+                          <option key={project} value={project}>
+                            {project}
+                          </option>
+                        ))}
+                        <option value="new">+ Create New Project</option>
+                      </select>
+                      {uploadForm.projectId === 'new' && (
+                        <Input
+                          placeholder="Enter new project name"
+                          value={newProjectName}
+                          onChange={(e) => setNewProjectName(e.target.value)}
+                          className="mt-2 w-full"
+                        />
+                      )}
+                    </div>
 
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Story Description</label>
-                <Textarea
-                  placeholder="Enter story description..."
-                  rows={3}
-                  value={formData.storyDescription}
-                  onChange={(e) => handleInputChange("storyDescription", e.target.value)}
-                  className="border-gray-300 focus:border-gray-400 focus:ring-gray-400 resize-none rounded-lg"
-                />
-              </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                        <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                        Story ID *
+                      </label>
+                      <Input
+                        placeholder="Enter Story ID"
+                        value={uploadForm.storyId}
+                        onChange={(e) => setUploadForm(prev => ({ ...prev, storyId: e.target.value }))}
+                        className="w-full border border-gray-300 focus:border-blue-400 focus:ring-1 focus:ring-blue-200 h-10 rounded-lg"
+                      />
+                    </div>
+                  </div>
 
-              <div className="flex justify-start pt-4">
-                <Button
-                  onClick={handleSearch}
-                  size="lg"
-                  className="px-12 py-2 bg-blue-400 hover:bg-blue-500 text-white font-medium rounded-lg shadow-md"
-                >
-                  <Search className="mr-2 h-4 w-4" />
-                  Search
-                </Button>
-              </div>
+                  <div className="space-y-2 md:col-span-4">
+                    <label className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                      <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                      User Story Content *
+                    </label>
+                    <div className="relative">
+                      <div className="flex items-end gap-2">
+                        <div className="flex-1 relative max-w-[1600px]">
+                          <Textarea
+                            placeholder="Type your user story here or upload a document..."
+                            rows={3}
+                            value={uploadForm.content}
+                            onChange={(e) => setUploadForm(prev => ({ ...prev, content: e.target.value }))}
+                            className="border border-gray-300 focus:border-blue-400 focus:ring-1 focus:ring-blue-200 resize-none rounded-lg pr-12 w-[1500px]"
+                          />
+                          <div className="absolute bottom-2 right-2 flex items-center gap-1">
+                            <input
+                              type="file"
+                              accept=".pdf,.docx,.txt"
+                              onChange={(e) => setUploadForm(prev => ({ ...prev, file: e.target.files?.[0] || null }))}
+                              className="hidden"
+                              id="file-upload-chat"
+                            />
+                            <label htmlFor="file-upload-chat" className="cursor-pointer p-1 hover:bg-gray-100 rounded transition-colors">
+                              <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                              </svg>
+                            </label>
+                          </div>
+                        </div>
+                        <Button
+                          onClick={handleUploadStory}
+                          disabled={isUploading || 
+                            (uploadForm.projectId === 'new' ? !newProjectName : !uploadForm.projectId) || 
+                            !uploadForm.storyId || 
+                            (!uploadForm.content && !uploadForm.file)}
+                          className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 disabled:from-gray-400 disabled:to-gray-400 text-white font-semibold rounded-lg px-4 py-2 h-10 shadow-lg transform transition-all duration-200 hover:scale-105 whitespace-nowrap"
+                        >
+                          {isUploading ? (
+                            <div className="flex items-center gap-2">
+                              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                              <span>Processing...</span>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                              </svg>
+                              <span>Generate</span>
+                            </div>
+                          )}
+                        </Button>
+                      </div>
+                      
+                      {/* File Upload Status */}
+                      {uploadForm.file && (
+                        <div className="mt-2 flex items-center gap-2 p-3 bg-gradient-to-r from-blue-50 to-purple-50 rounded-xl border border-blue-200">
+                          <div className="w-6 h-6 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex items-center justify-center">
+                            <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                          </div>
+                          <span className="text-sm font-medium text-gray-800 flex-1">{uploadForm.file.name}</span>
+                          <button
+                            onClick={() => setUploadForm(prev => ({ ...prev, file: null }))}
+                            className="text-gray-500 hover:text-gray-700 p-1 hover:bg-gray-100 rounded-lg transition-colors"
+                          >
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Upload Status */}
+                  {uploadStatus && (
+                    <div className={`p-4 rounded-xl border-2 ${
+                      uploadStatus.type === 'success' ? 'bg-gradient-to-r from-green-50 to-emerald-50 border-green-200 text-green-800' :
+                      uploadStatus.type === 'error' ? 'bg-gradient-to-r from-red-50 to-pink-50 border-red-200 text-red-800' :
+                      'bg-gradient-to-r from-blue-50 to-purple-50 border-blue-200 text-blue-800'
+                    }`}>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          {uploadStatus.type === 'success' && (
+                            <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center">
+                              <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                              </svg>
+                            </div>
+                          )}
+                          {uploadStatus.type === 'error' && (
+                            <div className="w-8 h-8 bg-red-500 rounded-full flex items-center justify-center">
+                              <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            </div>
+                          )}
+                          {uploadStatus.type === 'info' && (
+                            <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex items-center justify-center">
+                              <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
+                            </div>
+                          )}
+                          <span className="font-semibold">{uploadStatus.message}</span>
+                        </div>
+                        <button
+                          onClick={() => setUploadStatus(null)}
+                          className="text-gray-500 hover:text-gray-700 p-1 hover:bg-gray-100 rounded-lg transition-colors"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
 
-        {/* Date Filter Section */}
-        <div className="max-w-[95%] mx-auto mb-4 flex flex-col md:flex-row md:items-end md:justify-between gap-4">
-  {/* Date filter controls - left side */}
-  <div className="flex flex-col md:flex-row md:items-end gap-4">
-    <div>
-      <label className="text-sm font-medium text-slate-700">From Date</label>
-      <Input
-        type="date"
-        value={dateFilter.from}
-        onChange={e => setDateFilter(df => ({...df, from: e.target.value}))}
-        className="border-gray-300 focus:border-gray-400 focus:ring-gray-400 h-10 rounded-lg"
-      />
-    </div>
-    <div>
-      <label className="text-sm font-medium text-slate-700">To Date</label>
-      <Input
-        type="date"
-        value={dateFilter.to}
-        onChange={e => setDateFilter(df => ({...df, to: e.target.value}))}
-        className="border-gray-300 focus:border-gray-400 focus:ring-gray-400 h-10 rounded-lg"
-      />
-    </div>
-    <Button
-      onClick={handleDateFilter}
-      className="bg-blue-400 hover:bg-blue-500 text-white font-medium rounded-lg shadow-md h-10 px-6 mt-6 md:mt-0"
-    >
-      Filter by Date
-    </Button>
-    <Button
-      onClick={handleClearDateFilter}
-      variant="outline"
-      className="h-10 px-6 mt-6 md:mt-0 border-gray-300"
-    >
-      Clear Filter
-    </Button>
-  </div>
-  {/* Timer - right side */}
-  <div className="flex justify-end items-end w-full md:w-auto">
-    <NextReloadBanner />
-  </div>
-</div>
-        {/* Results Table Section */}
-        <div className="max-w-[95%] mx-auto mb-12">
-          <div className="flex items-center mb-4">
-            <h2 className="text-xl font-semibold text-blue-800">Test Cases Results</h2>
+        {/* Enhanced Date Filter Section */}
+        <div className="mb-8">
+          <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-6">
+            {/* Date filter controls - left side */}
+            <div className="flex flex-col sm:flex-row sm:items-end gap-4">
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-blue-500" />
+                  From Date
+                </label>
+                <Input
+                  type="date"
+                  value={dateFilter.from}
+                  onChange={e => setDateFilter(df => ({...df, from: e.target.value}))}
+                  className="border-2 border-gray-200 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 h-12 rounded-xl shadow-sm"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-green-500" />
+                  To Date
+                </label>
+                <Input
+                  type="date"
+                  value={dateFilter.to}
+                  onChange={e => setDateFilter(df => ({...df, to: e.target.value}))}
+                  className="border-2 border-gray-200 focus:border-green-400 focus:ring-2 focus:ring-green-100 h-12 rounded-xl shadow-sm"
+                />
+              </div>
+              <Button
+                onClick={handleDateFilter}
+                className="bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 text-white font-semibold rounded-xl shadow-lg h-12 px-6 transition-all duration-200 transform hover:scale-105"
+              >
+                <Calendar className="mr-2 h-4 w-4" />
+                Filter by Date
+              </Button>
+            </div>
+
+            {/* Project filter and sort controls - right side */}
+            <div className="flex flex-col lg:flex-row items-start lg:items-end gap-4">
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+                  <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
+                  Project
+                </label>
+                <select
+                  value={selectedProject}
+                  onChange={(e) => setSelectedProject(e.target.value)}
+                  className="border-2 border-gray-200 focus:border-orange-400 focus:ring-2 focus:ring-orange-100 h-12 rounded-xl px-4 py-2 bg-white shadow-sm"
+                >
+                  <option value="">All Projects</option>
+                  {projects.map((project) => (
+                    <option key={project} value={project}>
+                      {project}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  onClick={() => fetchStories(currentPage, perPage)}
+                  variant="outline"
+                  className="h-12 px-4 border-2 border-gray-300 hover:border-gray-400 hover:bg-gray-50 rounded-xl font-semibold transition-all duration-200 flex items-center gap-2"
+                >
+                  <RefreshCw className="h-4 w-4" />
+                  Refresh
+                </Button>
+              </div>
+              <div className="flex items-center gap-3">
+                <Button
+                  onClick={handleClearFilters}
+                  variant="outline"
+                  className="h-12 px-6 border-2 border-gray-300 hover:border-gray-400 hover:bg-gray-50 rounded-xl font-semibold transition-all duration-200"
+                >
+                  Clear All Filters
+                </Button>
+                <NextReloadBanner />
+              </div>
+            </div>
           </div>
-          <Card className="shadow-lg border border-gray-200 rounded-xl overflow-hidden">
+        </div>
+
+        {/* Enhanced Results Table Section */}
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-bold text-gray-800">Test Cases Results</h2>
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-lg shadow-sm border border-gray-200">
+                <label className="text-sm font-semibold text-gray-700">Sort by:</label>
+                <select
+                  value={sortOrder}
+                  onChange={(e) => setSortOrder(e.target.value as 'desc' | 'asc')}
+                  className="border-0 focus:ring-0 bg-transparent text-sm font-medium text-blue-600"
+                >
+                  <option value="desc">Newest First</option>
+                  <option value="asc">Oldest First</option>
+                </select>
+              </div>
+            </div>
+          </div>
+          
+          <Card className="shadow-lg border border-gray-200 overflow-hidden">
             <CardContent className="p-0 bg-white">
-              <div className="overflow-x-auto rounded-b-xl">
-                {loading ? (
-                  <div className="p-8 text-center text-blue-600 font-semibold">Loading...</div>
-                ) : (
-                  <Table className="rounded-xl overflow-hidden w-full">
-                  <TableHeader>
-                    <TableRow className="bg-blue-50 border-b border-gray-200">
-                        <TableHead className="font-semibold text-blue-800 py-4 px-2 w-[10%]">Story ID</TableHead>
-                        <TableHead className="font-semibold text-blue-800 py-4 px-2 w-[25%]">Story Description</TableHead>
-                        <TableHead className="font-semibold text-blue-800 py-4 px-2 w-[25%]">Story Content</TableHead>
-                        <TableHead className="font-semibold text-blue-800 py-4 px-2 w-[10%] text-center">No. of Test Cases</TableHead>
-                        <TableHead className="font-semibold text-blue-800 py-4 px-2 w-[15%] text-center">Test Case Generated Time</TableHead>
-                        <TableHead className="font-semibold text-blue-800 py-4 px-2 w-[10%] text-center">Duration</TableHead>
-                        <TableHead className="font-semibold text-blue-800 py-4 px-2 w-[10%] text-center">Action</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                      {stories.map((item, index) => (
-                      <TableRow
-                          key={item.id || index}
-                          className={`hover:bg-gray-100 transition-colors`}
-                        >
-                          <TableCell className="font-medium text-slate-800 py-3 px-2">{item.id}</TableCell>
-                          <TableCell className="text-slate-700 py-3 px-2">
-                            <div className="space-y-2">
-                              <div className="line-clamp-3 hover:line-clamp-none transition-all duration-200" title={item.description}>
-                                {item.description}
-                              </div>
-                              <div className="inline-flex items-center gap-1 px-2 py-1 bg-purple-100 text-purple-700 rounded-full text-xs font-medium">
-                                <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                                  <path d="M10 2a8 8 0 100 16 8 8 0 000-16zm0 14a6 6 0 110-12 6 6 0 010 12z"/>
-                                </svg>
-                                AI-generated description
+              {loading ? (
+                <div className="p-8 text-center">
+                  <div className="inline-flex items-center gap-3 text-blue-600 font-semibold">
+                    <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                    Loading stories...
+                  </div>
+                </div>
+              ) : (
+                <div className="overflow-x-auto rounded-xl border border-blue-100">
+                  <table className="w-full bg-white">
+                    <thead>
+                      <tr className="bg-gradient-to-r from-blue-50 via-indigo-50 to-purple-50 border-b border-blue-200">
+                        <th className="font-semibold text-blue-900 py-3 px-3 min-w-[100px] max-w-[120px] text-left whitespace-nowrap">
+                          <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                            <span>Story ID</span>
+                          </div>
+                        </th>
+                        <th className="font-semibold text-blue-900 py-3 px-3 min-w-[180px] max-w-[200px] text-left">
+                          <div className="flex flex-col items-start gap-1">
+                            <span>Story Description</span>
+                            <div className="inline-flex items-center gap-1 px-2 py-0.5 bg-purple-100 text-purple-800 rounded-full text-xs font-medium">
+                              <Brain className="w-3 h-3" />
+                              AI Generated Description
+                            </div>
+                          </div>
+                        </th>
+                        <th className="font-semibold text-blue-900 py-3 px-3 min-w-[200px] max-w-[220px] text-left">
+                          <div className="flex flex-col items-start gap-1">
+                            <span>Story Content</span>
+                            <div className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100 text-blue-800 rounded-full text-xs font-medium">
+                              <FileText className="w-3 h-3" />
+                              Content
+                            </div>
+                          </div>
+                        </th>
+                        <th className="font-semibold text-blue-900 py-3 px-3 min-w-[140px] max-w-[160px] text-center">
+                          <div className="flex flex-col items-center gap-1">
+                            <span>Test Cases</span>
+                            <div className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100 text-blue-800 rounded-full text-xs font-medium">
+                              <FileText className="w-3 h-3" />
+                              Generated by AI
+                            </div>
+                          </div>
+                        </th>
+                        <th className="font-semibold text-blue-900 py-3 px-3 min-w-[140px] max-w-[160px] text-center">
+                          <div className="flex flex-col items-center gap-1">
+                            <span>Impacted Test Cases</span>
+                            <div className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-100 text-amber-800 rounded-full text-xs font-medium">
+                              <Brain className="w-3 h-3" />
+                              Impact Analysis by AI
+                            </div>
+                          </div>
+                        </th>
+                        <th className="font-semibold text-blue-900 py-3 px-3 min-w-[140px] max-w-[160px] text-center">
+                          <div className="flex flex-col items-center gap-1">
+                            <span>Generated Time</span>
+                            <div className="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-100 text-gray-800 rounded-full text-xs font-medium">
+                              <Calendar className="w-3 h-3" />
+                              Date
+                            </div>
+                          </div>
+                        </th>
+                        <th className="font-semibold text-blue-900 py-3 px-3 min-w-[100px] max-w-[120px] text-center">
+                          <div className="flex flex-col items-center gap-1">
+                            <span>Actions</span>
+                            <div className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-800 rounded-full text-xs font-medium">
+                              <Download className="w-3 h-3" />
+                              Download
+                            </div>
+                          </div>
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {stories.map((story, index) => (
+                        <tr key={story.id || index} className="group hover:bg-gray-50 transition-colors border-b border-gray-100">
+                          <td className="font-semibold text-gray-800 py-2 px-3 min-w-[100px] max-w-[120px] relative group">
+                            <div className="flex items-center gap-1.5">
+                              <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                              <span className="text-sm truncate cursor-default">{story.id}</span>
+                              <div className="absolute left-3 top-full mt-1 z-10 invisible group-hover:visible opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                                <div className="bg-white border border-gray-200 shadow-lg rounded-lg px-3 py-2 text-sm whitespace-nowrap">
+                                  <div className="flex items-center gap-1.5">
+                                    <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                                    {story.id}
+                                  </div>
+                                </div>
                               </div>
                             </div>
-                          </TableCell>
-                          <TableCell className="px-6 py-4 text-sm text-gray-500">
-                            {item.document_content ? (
-                              <div>
-                                <div className={`text-sm text-gray-700 ${!expandedRows.has(item.id) ? 'line-clamp-2' : ''}`}>
-                                  {item.document_content}
-                                </div>
-                                {item.document_content.length > 150 && (
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      toggleRowExpand(e, item.id);
-                                    }}
-                                    className="mt-1 text-blue-600 hover:text-blue-800 hover:bg-blue-50"
-                                  >
-                                    {expandedRows.has(item.id) ? 'Show Less' : 'Read More'}
-                                  </Button>
-                                )}
+                          </td>
+                          <td className="text-gray-700 py-2 px-3 min-w-[180px] max-w-[200px]">
+                            <div className="relative group cursor-pointer">
+                              <div className="description-content line-clamp-2 text-sm">
+                                {story.description || 'No description available'}
                               </div>
-                            ) : (
-                              <span className="text-gray-400">No content available</span>
-                            )}
-                          </TableCell>
-                          <TableCell className="py-3 px-2 text-center">
-                            <Button
-                              variant="ghost"
-                              onClick={() => router.push(`/test-cases/${item.id}`)}
-                              className="inline-flex items-center justify-center px-3 py-1 rounded-full bg-blue-50 text-blue-700 font-medium hover:bg-blue-100 transition-colors duration-200"
+                              {story.description && (
+                                <button
+                                  onClick={() => {
+                                    setSelectedStory(story);
+                                    setShowStoryContent(true);
+                                  }}
+                                  className="text-xs text-blue-600 hover:text-blue-700 font-medium mt-1"
+                                >
+                                  Read More
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                          <td className="text-gray-700 py-2 px-3 min-w-[200px] max-w-[220px]">
+                            <div className="relative group cursor-pointer">
+                              <div className="line-clamp-2 text-sm">
+                                {story.doc_content_text || 'No content available'}
+                              </div>
+                              {story.doc_content_text && (
+                                <button
+                                  onClick={() => {
+                                    setSelectedStory(story);
+                                    setShowStoryContent(true);
+                                  }}
+                                  className="text-xs text-blue-600 hover:text-blue-700 font-medium mt-1"
+                                >
+                                  Read More
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                          <td className="py-2 px-3 text-center min-w-[140px] max-w-[160px]">
+                            <button
+                              onClick={() => router.push(`/test-cases/${story.id}`)}
+                              className="inline-flex items-center justify-center px-2.5 py-1.5 rounded bg-blue-50 text-blue-700 font-medium hover:bg-blue-100 transition-colors border border-blue-200 text-sm"
                             >
-                              {item.test_case_count || 0} Test Cases
-                            </Button>
-                          </TableCell>
-                          <TableCell className="py-3 px-2 text-center">
-                            {item.test_case_created_time ? (
-                              <div className="flex flex-col items-center text-sm">
-                                <span className="text-gray-700">
-                                  {new Date(item.test_case_created_time).toLocaleString('en-US', {
+                              <FileText className="w-3 h-3 mr-1" />
+                              {story.test_case_count || 0} Test Cases
+                            </button>
+                          </td>
+                          <td className="py-2 px-3 text-center min-w-[140px] max-w-[160px]">
+                            {typeof story.impactedTestCases === 'number' ? (
+                              <button
+                                onClick={() => router.push(`/story-details/${story.id}?project_id=${story.project_id}`)}
+                                className="inline-flex items-center justify-center px-2.5 py-1.5 rounded bg-amber-50 text-amber-700 font-medium hover:bg-amber-100 transition-colors border border-amber-200 text-sm"
+                              >
+                                <Brain className="w-3 h-3 mr-1" />
+                                {story.impactedTestCases} Impacted
+                              </button>
+                            ) : (
+                              <span className="text-gray-400 italic text-sm">N/A</span>
+                            )}
+                          </td>
+                          <td className="py-2 px-3 text-center min-w-[140px] max-w-[160px]">
+                            {story.test_case_created_time ? (
+                              <div className="flex flex-col items-center text-sm space-y-1">
+                                <span className="text-gray-800 font-medium">
+                                  {new Date(story.test_case_created_time).toLocaleString('en-US', {
                                     year: 'numeric',
                                     month: 'short',
                                     day: 'numeric'
                                   })}
                                 </span>
-                                <span className="text-gray-500">
-                                  {new Date(item.test_case_created_time).toLocaleString('en-US', {
+                                <span className="text-gray-500 bg-gray-100 px-2 py-0.5 rounded text-xs">
+                                  {new Date(story.test_case_created_time).toLocaleString('en-US', {
                                     hour: '2-digit',
                                     minute: '2-digit',
                                     hour12: true
@@ -854,85 +1389,69 @@ export default function TestCaseGenerator() {
                                 </span>
                               </div>
                             ) : (
-                              <span className="text-gray-400">-</span>
+                              <span className="text-gray-400 italic text-sm">-</span>
                             )}
-                          </TableCell>
-                          <TableCell className="py-3 px-2 text-center">
-                            {/* Duration column */}
-                            <span className="text-sm">
-                              {calculateDuration(item.embedding_timestamp, item.test_case_created_time)}
-                            </span>
-                          </TableCell>
-                          <TableCell className="py-3 px-2 text-center">
-                            <Button
-                              variant="ghost"
-                              onClick={() => handleDownload(item.id)}
-                              className="inline-flex items-center justify-center px-3 py-1 rounded-full bg-green-50 text-green-700 font-medium hover:bg-green-100 transition-colors duration-200"
+                          </td>
+                          <td className="py-2 px-3 text-center min-w-[100px] max-w-[120px]">
+                            <button
+                              onClick={() => handleDownload(story.id)}
+                              className="inline-flex items-center justify-center px-2.5 py-1.5 rounded bg-green-50 text-green-700 font-medium hover:bg-green-100 transition-colors border border-green-200 text-sm"
                             >
-                              <Download className="h-4 w-4 mr-2" />
+                              <Download className="w-3 h-3 mr-1" />
                               Download
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-                )}
-                {renderPagination()}
-              </div>
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {renderPagination()}
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
       </div>
 
-      {/* Professional Footer */}
-      <footer className="mt-auto">
-        <div className="bg-blue-300 py-4 px-6 rounded-t-xl">
-          <div className="max-w-7xl mx-auto flex justify-center items-center">
-            <div className="flex space-x-4 mb-4 md:mb-0">
-              <a href="#" className="text-blue-800 hover:text-blue-600 transition-colors">
-                <Linkedin className="h-5 w-5" />
-              </a>
-              <a href="#" className="text-blue-800 hover:text-blue-600 transition-colors">
-                <Facebook className="h-5 w-5" />
-              </a>
-              <a href="#" className="text-blue-800 hover:text-blue-600 transition-colors">
-                <Twitter className="h-5 w-5" />
-              </a>
-              <a href="#" className="text-blue-800 hover:text-blue-600 transition-colors">
-                <Instagram className="h-5 w-5" />
-              </a>
-              <a href="#" className="text-blue-800 hover:text-blue-600 transition-colors">
-                <Youtube className="h-5 w-5" />
-              </a>
-              <a href="#" className="text-blue-800 hover:text-blue-600 transition-colors">
-                <Music className="h-5 w-5" />
-              </a>
-            </div>
+      {/* Simplified Footer */}
+      <footer className="mt-6">
+        <div className="bg-gray-800 py-3 text-center text-gray-300 text-sm">
+          <div className="w-full">
+            © 2025 Innova Solutions. All Rights Reserved.
           </div>
-        </div>
-        <div className="bg-white py-3 text-center text-gray-600 text-sm">
-          ©2025 Innova Solutions. All Rights Reserved.
         </div>
       </footer>
 
-      {/* Modal Popup */}
+      {/* Enhanced Modal Popup */}
       <Dialog open={showModal} onOpenChange={setShowModal}>
-        <DialogContent className="max-w-2xl rounded-xl border border-gray-200">
-          <DialogHeader className="bg-blue-100 text-blue-800 p-4 -m-6 mb-4 rounded-t-xl">
-            <DialogTitle className="text-lg font-medium">Test Case Steps</DialogTitle>
+        <DialogContent className="max-w-3xl rounded-2xl border-0 shadow-2xl">
+          <DialogHeader className="bg-gradient-to-r from-blue-50 to-indigo-50 text-blue-800 p-6 -m-6 mb-6 rounded-t-2xl border-b border-blue-100">
+            <DialogTitle className="text-xl font-bold flex items-center gap-3">
+              <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
+                <FileText className="w-4 h-4 text-white" />
+              </div>
+              Test Case Steps
+            </DialogTitle>
+            <DialogDescription className="text-blue-600 mt-2">
+              AI-generated test cases for your user story
+            </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3 max-h-96 overflow-y-auto px-2">
+          <div className="space-y-4 max-h-96 overflow-y-auto px-2">
             {selectedTestCases.map((step, index) => (
-              <div key={index} className="p-3 bg-gray-100 rounded-lg border-l-4 border-gray-400">
-                <p className="text-sm font-medium text-slate-700">{step}</p>
+              <div key={index} className="p-4 bg-gradient-to-r from-gray-50 to-blue-50 rounded-xl border-l-4 border-blue-400 shadow-sm">
+                <div className="flex items-start gap-3">
+                  <div className="w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 mt-0.5">
+                    {index + 1}
+                  </div>
+                  <p className="text-sm font-medium text-slate-700 leading-relaxed">{step}</p>
+                </div>
               </div>
             ))}
           </div>
-          <div className="flex justify-end pt-4">
+          <div className="flex justify-end pt-6 border-t border-gray-100">
             <Button
               onClick={() => setShowModal(false)}
-              className="bg-blue-400 hover:bg-blue-500 text-white px-6 rounded-lg"
+              className="bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white px-8 py-3 rounded-xl font-semibold shadow-lg transition-all duration-200 transform hover:scale-105"
             >
               Close
             </Button>
@@ -940,145 +1459,81 @@ export default function TestCaseGenerator() {
         </DialogContent>
       </Dialog>
 
-      {/* Fixed Chatbot */}
-      <div
-        className={!showChatbot ? "fixed bottom-6 right-6 z-50" : undefined}
-        style={!showChatbot ? { width: 0, height: 0 } : undefined}
-      >
-        {!showChatbot ? (
-          <Button
-            onClick={() => setShowChatbot(true)}
-            size="lg"
-            className="rounded-full h-12 w-12 shadow-lg hover:shadow-xl transition-all duration-300 bg-blue-400 hover:bg-blue-500 fixed bottom-6 right-6 z-50"
-          >
-            <MessageCircle className="h-5 w-5" />
-          </Button>
-        ) : (
-          <div
-            className="fixed bottom-6 right-6 z-50 flex flex-col h-full bg-white border border-gray-300 rounded-2xl shadow-2xl overflow-hidden"
-            style={{ width: chatbotWidth, height: chatbotHeight, minWidth, minHeight, maxWidth, maxHeight, boxShadow: '0 8px 32px rgba(0,0,0,0.18)' }}
-          >
-            {/* Header */}
-            <div className="flex items-center justify-between px-5 py-3 bg-gradient-to-r from-blue-100 to-blue-200 border-b border-gray-200">
-              <span className="font-semibold text-blue-800 text-base">AI Test Case Assistant</span>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setShowChatbot(false)}
-                className="text-gray-500 hover:bg-gray-200 rounded-full"
-              >
-                <X className="h-5 w-5" />
-              </Button>
-            </div>
-            {/* Chat area */}
-            <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3 bg-gradient-to-br from-white to-blue-50" style={{scrollbarWidth:'thin'}}>
-              {chatMessages.map((message, index) => {
-                console.log('Chat message content:', message.content);
-                return (
-                  <div key={index} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>
-                    <div
-                      className={
-                        message.role === "user"
-                          ? "bg-blue-500 text-white rounded-2xl rounded-br-sm px-4 py-2 max-w-[80%] shadow"
-                          : "bg-gray-100 text-gray-800 rounded-2xl rounded-bl-sm px-4 py-2 max-w-[80%] shadow border border-blue-100"
-                      }
-                      style={{ wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}
-                    >
-                      {message.role === "assistant" ? (
-                        <pre className="text-sm whitespace-pre-wrap" style={{background:'none',margin:0,padding:0,border:'none'}}>
-                          {message.content && message.content.toString().trim() ? message.content : '[No output from LLM]'}
-                        </pre>
-                      ) : (
-                        <span className="text-sm whitespace-pre-wrap">{message.content}</span>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-              {isGenerating && (
-                <div className="flex justify-start">
-                  <div className="inline-block p-2 rounded-lg bg-white border border-gray-200 text-slate-500 text-sm shadow">Generating test cases...</div>
-                </div>
-              )}
-            </div>
-            {/* Input area */}
-            <div className="px-4 py-3 bg-white border-t border-gray-200 flex flex-col gap-2">
-              <div className="flex space-x-2 mb-1 items-center">
-                <label className="text-xs font-medium text-gray-700">Model:</label>
-                <select
-                  value={selectedModel}
-                  onChange={e => setSelectedModel(e.target.value as 'gemini' | 'rag')}
-                  className="border border-gray-300 rounded px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-200"
-                >
-                  <option value="gemini">Gemini</option>
-                  <option value="rag">RAG</option>
-                </select>
-              </div>
-              <div className="flex space-x-2 items-center">
-                <Input
-                  placeholder="Describe your feature for test case generation..."
-                  value={chatMessage}
-                  onChange={(e) => setChatMessage(e.target.value)}
-                  onKeyPress={(e) => e.key === "Enter" && !isGenerating && handleSendMessage()}
-                  disabled={isGenerating}
-                  className="border-gray-300 focus:border-gray-400 focus:ring-gray-400 rounded-lg flex-1 text-sm"
-                />
-                <Button
-                  size="sm"
-                  onClick={handleSendMessage}
-                  disabled={isGenerating || !chatMessage.trim()}
-                  className="bg-blue-400 hover:bg-blue-500 text-white rounded-lg px-4 py-2 text-sm"
-                >
-                  Send
-                </Button>
-              </div>
-            </div>
-            {/* Resize handles: corners and sides */}
-            {/* Corners */}
-            <div onMouseDown={() => handleResizeMouseDown('nw')} className="absolute top-0 left-0 w-3 h-3 cursor-nwse-resize z-10" />
-            <div onMouseDown={() => handleResizeMouseDown('ne')} className="absolute top-0 right-0 w-3 h-3 cursor-nesw-resize z-10" />
-            <div onMouseDown={() => handleResizeMouseDown('sw')} className="absolute bottom-0 left-0 w-3 h-3 cursor-nesw-resize z-10" />
-            <div onMouseDown={() => handleResizeMouseDown('se')} className="absolute bottom-0 right-0 w-3 h-3 cursor-nwse-resize z-10" />
-            {/* Sides */}
-            <div onMouseDown={() => handleResizeMouseDown('n')} className="absolute top-0 left-3 right-3 h-2 cursor-ns-resize z-10" />
-            <div onMouseDown={() => handleResizeMouseDown('s')} className="absolute bottom-0 left-3 right-3 h-2 cursor-ns-resize z-10" />
-            <div onMouseDown={() => handleResizeMouseDown('e')} className="absolute top-3 bottom-3 right-0 w-2 cursor-ew-resize z-10" />
-            <div onMouseDown={() => handleResizeMouseDown('w')} className="absolute top-3 bottom-3 left-0 w-2 cursor-ew-resize z-10" />
-          </div>
-        )}
-      </div>
+      {/* Replace the old chatbot implementation with the new component */}
+      <Chatbot
+        onSendMessage={handleSendMessage}
+        chatMessages={chatMessages}
+        isGenerating={isGenerating}
+        selectedModel={selectedModel}
+        onModelChange={(model) => setSelectedModel(model)}
+      />
 
       {/* Story Content Dialog */}
       <Dialog open={showStoryContent} onOpenChange={setShowStoryContent}>
         <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="text-xl font-semibold text-blue-800">
-              Story Content
+            <DialogTitle className="text-xl font-semibold text-blue-800 flex items-center gap-3">
+              <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
+                <FileText className="w-4 h-4 text-white" />
+              </div>
+              Story Details
             </DialogTitle>
-            <DialogDescription className="text-sm text-gray-600">
+            <DialogDescription className="text-blue-600 mt-2 font-medium">
               ID: {selectedStory?.id}
             </DialogDescription>
           </DialogHeader>
           
           <div className="space-y-6">
             <div>
-              <h3 className="text-sm font-semibold text-gray-700 mb-2">Story Title</h3>
+              <h3 className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
+                <span>AI-Generated Description</span>
+                <div className="px-2 py-0.5 bg-purple-100 text-purple-800 rounded-full text-xs">AI</div>
+              </h3>
               <div className="bg-gray-50 rounded-lg p-4">
-                <p className="text-gray-700 font-medium">{selectedStory?.title}</p>
-              </div>
-            </div>
-            
-            <div>
-              <h3 className="text-sm font-semibold text-gray-700 mb-2">Story Summary</h3>
-              <div className="bg-gray-50 rounded-lg p-4">
-                <p className="text-gray-700">{selectedStory?.summary}</p>
+                <p className="text-gray-700 text-sm">{selectedStory?.description}</p>
               </div>
             </div>
             
             {selectedStory?.doc_content_text && (
               <div>
-                <h3 className="text-sm font-semibold text-gray-700 mb-2">Story Content</h3>
-                <div className="bg-gray-50 rounded-lg p-4">
+                <h3 className="text-sm font-semibold text-gray-700 mb-2">Full Story Content</h3>
+                <div className="bg-gray-50 rounded-lg p-4 max-h-[400px] overflow-y-auto border border-gray-100">
+                  <p className="text-gray-700 text-sm whitespace-pre-wrap">{selectedStory.doc_content_text}</p>
+                </div>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Enhanced Story Content Dialog */}
+      <Dialog open={showContentDialog} onOpenChange={setShowContentDialog}>
+        <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto rounded-2xl border-0 shadow-2xl">
+          <DialogHeader className="bg-gradient-to-r from-blue-50 to-indigo-50 p-6 -m-6 mb-6 rounded-t-2xl border-b border-blue-100">
+            <DialogTitle className="text-2xl font-bold text-blue-800 flex items-center gap-3">
+              <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
+                <FileText className="w-4 h-4 text-white" />
+              </div>
+              Story Content
+            </DialogTitle>
+            <DialogDescription className="text-blue-600 mt-2 font-medium">
+              Story ID: {selectedStory?.id}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-6">
+            <div>
+              <h3 className="text-sm font-semibold text-gray-700 mb-2">Story Description</h3>
+              <div className="bg-gray-50 rounded-lg p-4">
+                <p className="text-gray-700">{selectedStory?.description}</p>
+              </div>
+            </div>
+            
+            {/* Story Content */}
+            {selectedStory?.doc_content_text && (
+              <div>
+                <h3 className="text-sm font-semibold text-gray-700 mb-2">Full Content</h3>
+                <div className="bg-gray-50 rounded-lg p-4 max-h-[400px] overflow-y-auto">
                   <p className="text-gray-700 whitespace-pre-wrap">{selectedStory.doc_content_text}</p>
                 </div>
               </div>
@@ -1089,3 +1544,4 @@ export default function TestCaseGenerator() {
     </div>
   )
 }
+

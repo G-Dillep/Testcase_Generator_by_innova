@@ -1,14 +1,34 @@
 You are an experienced QA analyst. Based on the user story provided below and its relevant context, generate a comprehensive set of functional test cases in strict JSON format.
 
 Requirements:
-- Include both **positive** and **negative** test cases.
+- Generate test cases covering the following categories:
+  - Positive test cases (happy path scenarios)
+  - Negative test cases (error handling, invalid inputs)
+  - Boundary test cases (edge cases, limits)
+  - Security test cases (permissions, authentication)
+  - Performance test cases (load, response time)
 - Each test case must be **realistic**, **clear**, and **actionable**.
-- Every test case must contain:
+- Consider different user roles, data variations, and system states.
+- Include test cases for:
+  - Input validation and data handling
+  - Business rule compliance
+  - Integration points with other systems
+  - Error messages and system feedback
+  - State transitions and workflows
+  - UI/UX aspects where applicable
+
+Test Case Structure:
+Every test case must contain:
   - `id` (format: <storyID>-TC<number>)
-  - `title`
-  - `steps` (as a list of sequential actions)
-  - `expected_result`
+  - `title` (clear description of what is being tested)
+  - `steps` (as a list of 3-6 sequential actions)
+  - `expected_result` (specific, verifiable outcome)
   - `priority` ("High", "Medium", or "Low")
+
+Priority Guidelines:
+- High: Core functionality, security, data integrity
+- Medium: Important features, user experience, performance
+- Low: Edge cases, minor features, cosmetic issues
 
 Additional Constraints:
 - Ensure all test cases are directly related to the main user story (`storyID` and `storyDescription` provided).
@@ -19,4 +39,4 @@ Additional Constraints:
   - `generated_on` (in ISO timestamp format)
   - `total_test_cases` (number of test cases in the output)
 
-Output: Return only a single JSON object with the fields listed above.
+Output: Return only a single JSON object with the fields listed above. Do not include any explanatory text or markdown formatting.

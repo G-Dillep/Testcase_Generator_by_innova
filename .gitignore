@@ -1,0 +1,162 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+*.manifest
+*.spec
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Virtual Environment
+.env
+.env.*
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+*.sublime-workspace
+*.sublime-project
+
+# Logs and databases
+*.log
+*.sqlite
+*.db
+*.rdb
+logs/
+*.lance
+
+# Node.js / Next.js
+node_modules/
+.next/
+out/
+build/
+.DS_Store
+*.pem
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+.vercel
+
+# Project specific
+Backend/.env
+Backend/data/lance_db/*
+Backend/data/uploaded_docs/*
+Backend/data/success/*
+Backend/data/failure/*
+!Backend/data/uploaded_docs/README.md
+next_reload.txt
+
+# Test coverage
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# Distribution / packaging
+*.zip
+*.tar.gz
+*.rar
+*.7z
+
+# Operating System
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# Sensitive Information (backup patterns)
+**/credentials.*
+**/secrets.*
+**/*.key
+**/*.pem
+**/*.crt
+**/*.cer
+**/*.p12
+**/*.pfx
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# Frontend specific
+frontend/test-case-generator/.env
+frontend/test-case-generator/.env.*
+frontend/test-case-generator/build/
+frontend/test-case-generator/.next/
+frontend/test-case-generator/out/
+frontend/test-case-generator/node_modules/
+frontend/test-case-generator/.vercel/
+frontend/test-case-generator/coverage/
+frontend/test-case-generator/storybook-static/
+
+# Backend specific
+Backend/__pycache__/
+Backend/app/__pycache__/
+Backend/app/*/__pycache__/
+Backend/app/*/*/__pycache__/
+Backend/tests/__pycache__/
+Backend/tests/*/__pycache__/
+Backend/*.pyc
+Backend/data/*
+!Backend/data/README.md
+
+# Keep empty directories
+!Backend/data/uploaded_docs/.gitkeep
+!Backend/data/success/.gitkeep
+!Backend/data/failure/.gitkeep
+!Backend/data/lance_db/.gitkeep
